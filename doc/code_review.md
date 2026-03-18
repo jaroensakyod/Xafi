@@ -2,6 +2,18 @@
 
 เอกสารนี้รีวิวจากโค้ดจริงใน repo snapshot ปัจจุบัน ไม่ได้รีวิวจากแผนเก่าหรือเจตนาการออกแบบเพียงอย่างเดียว
 
+## Snapshot Update 2026-03-18
+
+รอบนี้มีการเปลี่ยนแปลงที่สำคัญและควรนับว่าเป็น improvement จริงใน architecture ของ flow ปัจจุบัน:
+
+- เพิ่ม `promptMode` (`soft-sell`, `hot-take`) และปรับ default prompt ให้คุมโทนกับโครงสร้างได้แม่นขึ้น
+- เพิ่ม post-processing ฝั่ง background เพื่อ normalize output ให้กลับมาเป็น 4 บรรทัดก่อน save draft
+- `Post to X` เปลี่ยนจาก prepare compose อย่างเดียวไปเป็น auto submit พร้อม success/error verification
+- `Auto Quote` เปลี่ยนจาก loop ที่อิง memory timer ไปเป็น stateful flow ที่เก็บสถานะและ countdown ใน storage
+- scheduler ของ `Auto Quote` ย้ายไปใช้ `chrome.alarms` แทน `setTimeout` เพื่อรับมือ lifecycle ของ MV3 service worker ได้ดีขึ้น
+
+สรุปเชิง review สำหรับ snapshot นี้: ไม่พบ blocking issue ใหม่จากชุดแก้ล่าสุดเมื่อดูจากโค้ดและ static validation แต่ยังมี residual risk เดิมจาก DOM fragility และการไม่มี test harness
+
 ## สรุปภาพรวม
 
 โปรเจกต์นี้มีแกนหลักชัดเจนและเดินมาถูกทางสำหรับงาน automation แบบ browser-only:
@@ -202,9 +214,11 @@ UI ไม่ใช่แค่ demo:
 
 `sidepanel.js` บังคับ prefix `#` ให้ query ทุกครั้ง ซึ่งเหมาะกับบางเคส แต่จำกัด use case ที่ต้องการค้นหาคำปกติหรือ phrase search
 
-### Risk D: service worker lifecycle ยังไม่มี recovery mode เต็มรูป
+### Risk D: service worker lifecycle ดีขึ้นสำหรับ Auto Quote แต่ AI queue ยังพึ่ง memory
 
-สำหรับ MV3 นี่เป็น risk สำคัญ เพราะ worker ไม่ได้อยู่ตลอดเวลา
+Auto Quote ได้ลดความเสี่ยงลงชัดเจนเพราะใช้ `chrome.alarms` และมี restore pass ตอน worker ตื่นขึ้นมาใหม่แล้ว
+
+อย่างไรก็ตาม AI generation queue ยังมี state สำคัญที่พึ่ง in-memory เช่น `pendingPrompt`, `aiProcessQueue`, `isProcessingAIQueue` จึงยังไม่ถือว่า recoverable เต็มรูปแบบทั้งระบบ
 
 ## ความพร้อมเชิง release
 
@@ -225,7 +239,7 @@ UI ไม่ใช่แค่ demo:
 ## ข้อเสนอแนะลำดับถัดไป
 
 1. แยก `background.js` เป็น module ย่อย
-2. เพิ่ม watchdog สำหรับ queue item ที่ค้าง
+2. เพิ่ม watchdog สำหรับ AI queue item ที่ค้าง
 3. ถอด popup blocking ใน side panel ออกทั้งหมด
 4. แยก pure utilities แล้วเริ่มเขียน tests
 5. เพิ่ม debug/diagnostics panel

@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "ค้นหาโพสต์ Viral บน X (500k+ views) แล้วสร้างคอนเทนต์ด้วย AI บน grok.com แบบอัตโนมัติ",
   "permissions": [
+    "alarms",
     "sidePanel",
     "storage",
     "activeTab",

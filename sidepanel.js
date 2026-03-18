@@ -122,6 +122,80 @@
     const btnAutoQuote = $('#btnAutoQuote');
     const autoQuoteStatus = $('#autoQuoteStatus');
     let isAutoQuote = false;
+    let autoQuoteState = null;
+
+    sendMessage({ type: 'GET_AUTO_QUOTE_STATE' }).then((res) => {
+        if (!res?.success) return;
+        autoQuoteState = res.data || null;
+        isAutoQuote = Boolean(autoQuoteState?.active);
+        updateAutoQuoteUi();
+        renderAutoQuoteState();
+    });
+
+    setInterval(() => {
+        if (autoQuoteState?.active) {
+            renderAutoQuoteState();
+        }
+    }, 1000);
+
+    function updateAutoQuoteUi() {
+        if (!btnAutoQuote || !autoQuoteStatus) return;
+
+        if (isAutoQuote) {
+            btnAutoQuote.textContent = '⏹️ หยุด Auto Quote';
+            btnAutoQuote.style.background = '#ef4444';
+            autoQuoteStatus.classList.remove('hidden');
+            return;
+        }
+
+        btnAutoQuote.textContent = '🚀 เริ่ม Auto Quote';
+        btnAutoQuote.style.background = '#10b981';
+        autoQuoteStatus.classList.add('hidden');
+    }
+
+    function renderAutoQuoteState() {
+        if (!autoQuoteStatus) return;
+
+        const state = autoQuoteState || {};
+        if (!state.active) {
+            autoQuoteStatus.textContent = state.message || '⏳ ระบบ Auto Quote ทำงานอยู่ - กำลังลุย Draft ตามคิว';
+            return;
+        }
+
+        const pendingCount = Number(state.pendingCount || 0);
+        const countdown = formatCountdown(state.nextRunAt);
+
+        switch (state.phase) {
+            case 'waiting-ai':
+                autoQuoteStatus.textContent = countdown
+                    ? `⏳ รอ AI/Grok ว่างก่อนเริ่ม Auto Quote • เริ่มใน ${countdown}`
+                    : '⏳ รอ AI/Grok ว่างก่อนเริ่ม Auto Quote';
+                break;
+            case 'posting':
+                autoQuoteStatus.textContent = `🚀 กำลังโพสต์ draft ${state.currentDraftId || ''}${pendingCount ? ` • คงเหลือ ${pendingCount} รายการ` : ''}`.trim();
+                break;
+            case 'waiting-next':
+                autoQuoteStatus.textContent = countdown
+                    ? `⏳ โพสต์ถัดไปใน ${countdown}${pendingCount ? ` • เหลือ ${pendingCount} รายการ` : ''}`
+                    : `⏳ รอโพสต์ถัดไป${pendingCount ? ` • เหลือ ${pendingCount} รายการ` : ''}`;
+                break;
+            case 'retrying':
+                autoQuoteStatus.textContent = countdown
+                    ? `⚠️ Auto Quote มีปัญหา กำลังลองใหม่ใน ${countdown}`
+                    : '⚠️ Auto Quote มีปัญหา กำลังลองใหม่อัตโนมัติ';
+                break;
+            default:
+                autoQuoteStatus.textContent = state.message || '⏳ ระบบ Auto Quote ทำงานอยู่';
+                break;
+        }
+    }
+
+    function formatCountdown(nextRunAt) {
+        const target = Number(nextRunAt || 0);
+        if (!target || target <= Date.now()) return '';
+        const totalSeconds = Math.max(0, Math.ceil((target - Date.now()) / 1000));
+        return `${totalSeconds} วินาที`;
+    }
 
     if (btnAutoQuote) {
         btnAutoQuote.addEventListener('click', async () => {
@@ -131,20 +205,17 @@
                 if (!res?.success) {
                     isAutoQuote = false;
                     alert(res?.error || 'ยังเริ่ม Auto Quote ไม่ได้');
-                    btnAutoQuote.textContent = '🚀 เริ่ม Auto Quote';
-                    btnAutoQuote.style.background = '#10b981';
-                    autoQuoteStatus.classList.add('hidden');
+                    updateAutoQuoteUi();
                     return;
                 }
 
-                btnAutoQuote.textContent = '⏹️ หยุด Auto Quote';
-                btnAutoQuote.style.background = '#ef4444';
-                autoQuoteStatus.classList.remove('hidden');
+                autoQuoteState = { ...(autoQuoteState || {}), active: true };
+                updateAutoQuoteUi();
+                renderAutoQuoteState();
             } else {
-                btnAutoQuote.textContent = '🚀 เริ่ม Auto Quote';
-                btnAutoQuote.style.background = '#10b981';
-                autoQuoteStatus.classList.add('hidden');
                 await sendMessage({ type: 'STOP_AUTO_QUOTE' });
+                updateAutoQuoteUi();
+                renderAutoQuoteState();
             }
         });
     }
@@ -262,6 +333,7 @@
             $('#pauseEveryChars').value = res.data.pauseEveryChars || 40;
             $('#pauseMin').value = res.data.pauseMin || 300;
             $('#pauseMax').value = res.data.pauseMax || 800;
+            $('#promptMode').value = res.data.promptMode || 'soft-sell';
             $('#scrollPreset').value = res.data.scrollPreset || 'medium';
             $('#manualAssist').checked = Boolean(res.data.manualAssist);
             $('#pauseOnFound').checked = Boolean(res.data.pauseOnFound);
@@ -292,9 +364,7 @@
         draftList.innerHTML = drafts.map(draft => `
       <div class="card draft-card" data-id="${escapeAttr(draft.id)}">
         <div class="card-meta">
-                    <span class="card-badge ${draft.status === 'ready' ? 'badge-ready' : 'badge-posted'}">
-                        ${draft.status === 'ready' ? '✏️ พร้อมโพสต์' : '📤 รอโพสต์'}
-                    </span>
+                                        ${renderDraftStatusBadge(draft)}
                     <div class="card-meta-right">
                                                 ${renderDraftReadinessBadge(draft)}
                         <span class="char-count">${getCharCount(draft.finalText || draft.generatedText)} ตัว</span>
@@ -341,9 +411,14 @@
             case 'post': {
                 e.currentTarget.disabled = true;
                 e.currentTarget.textContent = '⏳ กำลังส่ง...';
-                await sendMessage({ type: 'POST_TO_X', data: { id } });
-                e.currentTarget.textContent = '✅ ส่งแล้ว!';
-                e.currentTarget.classList.add('btn-success');
+                const response = await sendMessage({ type: 'POST_TO_X', data: { id } });
+                if (response?.success) {
+                    e.currentTarget.textContent = '✅ ส่งแล้ว!';
+                    e.currentTarget.classList.add('btn-success');
+                } else {
+                    e.currentTarget.disabled = false;
+                    e.currentTarget.textContent = '❌ ลองใหม่';
+                }
                 break;
             }
 
@@ -596,6 +671,7 @@
             pauseEveryChars: parseInt($('#pauseEveryChars').value) || 40,
             pauseMin: parseInt($('#pauseMin').value) || 300,
             pauseMax: parseInt($('#pauseMax').value) || 800,
+            promptMode: $('#promptMode').value || 'soft-sell',
             scrollPreset: $('#scrollPreset').value,
             manualAssist: $('#manualAssist').checked,
             pauseOnFound: $('#pauseOnFound').checked,
@@ -739,6 +815,10 @@
                 statusBadge.textContent = '✅ Done';
                 statusBadge.className = 'status-badge status-done';
                 statusBar.classList.add('hidden');
+                if (String(message || '').includes('Auto Quote')) {
+                    isAutoQuote = false;
+                    updateAutoQuoteUi();
+                }
                 loadDrafts();
                 // สลับไป tab drafts อัตโนมัติ
                 $$('.tab').forEach(t => t.classList.remove('active'));
@@ -756,6 +836,10 @@
                 statusBadge.textContent = '❌ Error';
                 statusBadge.className = 'status-badge status-error';
                 statusBar.classList.remove('hidden');
+                if (String(message || '').includes('Auto Quote')) {
+                    isAutoQuote = false;
+                    updateAutoQuoteUi();
+                }
                 setTimeout(() => statusBar.classList.add('hidden'), 8000);
                 break;
         }
@@ -770,6 +854,12 @@
         if (changes.results) loadResults();
         if (changes.viralPosts) loadViralPosts();
         if (changes.processQueue) loadProcessQueue();
+        if (changes.autoQuoteState) {
+            autoQuoteState = changes.autoQuoteState.newValue || null;
+            isAutoQuote = Boolean(autoQuoteState?.active);
+            updateAutoQuoteUi();
+            renderAutoQuoteState();
+        }
         if (changes.trendsCountry) {
             trendsCountry = changes.trendsCountry.newValue || 'TH';
             if (trendsCountrySelect) {
@@ -829,6 +919,30 @@
     function normalizeHashtagQuery(value) {
         const cleaned = String(value || '').replace(/^#+\s*/, '').trimStart();
         return `${HASHTAG_PREFIX}${cleaned}`;
+    }
+
+    function renderDraftStatusBadge(draft) {
+        const badge = getDraftStatusBadge(draft);
+        const title = escapeAttr(badge.title || badge.label);
+        return `<span class="card-badge ${badge.className}" title="${title}">${badge.label}</span>`;
+    }
+
+    function getDraftStatusBadge(draft) {
+        switch (draft.status) {
+            case 'auto_quote_queued':
+                return { label: '⏳ รอคิว Auto Quote', className: 'badge-posted', title: 'ระบบจะโพสต์รายการนี้อัตโนมัติตามคิว' };
+            case 'auto_quote_posting':
+            case 'posting':
+                return { label: '🚀 กำลังโพสต์', className: 'badge-ready', title: 'กำลังเปิด X และกดโพสต์ให้อัตโนมัติ' };
+            case 'posted':
+                return { label: '✅ โพสต์แล้ว', className: 'badge-posted', title: draft.postedAt ? `โพสต์เมื่อ ${formatTime(draft.postedAt)}` : 'โพสต์เสร็จแล้ว' };
+            case 'post_error':
+                return { label: '❌ โพสต์ไม่สำเร็จ', className: 'badge-quote-missing', title: draft.postError || 'โปรดลองใหม่อีกครั้ง' };
+            case 'pending_post':
+                return { label: '🕒 เตรียมโพสต์', className: 'badge-posted', title: 'ระบบกำลังเตรียมหน้า Compose' };
+            default:
+                return { label: '✏️ พร้อมโพสต์', className: 'badge-ready', title: 'พร้อมส่งไปโพสต์บน X' };
+        }
     }
 
     function renderDraftReadinessBadge(draft) {

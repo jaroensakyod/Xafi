@@ -7,22 +7,9 @@
 // =============================================
 
 // --- ค่าคงที่ ---
-const PROMPT_TEMPLATE_VERSION = 3;
+const PROMPT_TEMPLATE_VERSION = 5;
 
-const DEFAULT_SETTINGS = {
-    minViews: 500000,
-    typingSpeedMin: 30,
-    typingSpeedMax: 150,
-    pauseEveryChars: 40,
-    pauseMin: 300,
-    pauseMax: 800,
-    scrollPreset: 'medium',
-    manualAssist: false,
-    checkpointEverySteps: 6,
-    pauseOnFound: true,
-    sessionLimit: 15,
-    dailyLimit: 60,
-    promptTemplate: `สรุปเนื้อหาด้านล่างให้เป็นโพสต์ X (ทวิตเตอร์) สไตล์เพื่อนเล่าแบบชิล ๆ ภาษาพูดธรรมชาติ ห้ามทางการ ห้ามสุภาพเกิน
+const LEGACY_DEFAULT_PROMPT_TEMPLATE = `สรุปเนื้อหาด้านล่างให้เป็นโพสต์ X (ทวิตเตอร์) สไตล์เพื่อนเล่าแบบชิล ๆ ภาษาพูดธรรมชาติ ห้ามทางการ ห้ามสุภาพเกิน
 
 โครงสร้างบังคับเป๊ะ ๆ ดังนี้เท่านั้น:
 1. บรรทัดแรก: ประโยคเปิดหัว 1 ประโยค ชวนสงสัย ดึงดูด อยากอ่านต่อ (สั้น ไม่เกิน 10 คำ)
@@ -38,7 +25,107 @@ const DEFAULT_SETTINGS = {
 - ตอบเฉพาะข้อความโพสต์ที่สร้างเสร็จ ไม่มีคำอธิบาย ไม่มี markdown ไม่มี code block ไม่มีข้อความใด ๆ เพิ่มเติม
 
 เนื้อหาต้นทาง:
-{CONTENT}`
+{CONTENT}`;
+
+const V4_DEFAULT_PROMPT_TEMPLATE = `หน้าที่ของคุณคือเขียนโพสต์ X ภาษาไทยให้ดูเหมือนคนจริงเขียนเอง จากเนื้อหาต้นทางด้านล่าง
+
+โทนที่ต้องได้:
+- ภาษาพูดธรรมชาติ แบบคนเล่าให้เพื่อนฟัง
+- ลื่น อ่านง่าย ไม่ดูเป็น AI ไม่ดูเขียนตามสูตรแข็ง ๆ
+- เก็บใจความสำคัญจากต้นทางให้ครบ แต่ห้ามเดาข้อมูลเพิ่ม
+
+รูปแบบบังคับ:
+บรรทัด 1 = ประโยคเปิดสั้น ๆ ชวนอยากอ่านต่อ
+บรรทัด 2 = bullet ข้อแรก ต้องขึ้นต้นด้วย "- "
+บรรทัด 3 = bullet ข้อสอง ต้องขึ้นต้นด้วย "- "
+บรรทัด 4 = ประโยคปิดสั้น ๆ ที่โยงกลับประเด็นหลัก
+
+กฎที่ต้องทำตามทุกครั้ง:
+- ตอบออกมาเป็น 4 บรรทัดที่มีข้อความจริงเท่านั้น ห้ามมีบรรทัดเกินหรือบรรทัดว่าง
+- ห้ามมีคำนำประเภท "นี่คือโพสต์" "สรุปให้แล้ว" หรือคำอธิบายใด ๆ
+- ห้ามใช้ hashtag, @, ลิงก์, markdown, code block หรือเครื่องหมายอัญประกาศครอบทั้งโพสต์
+- เลี่ยงการคัดลอกถ้อยคำจากต้นทางตรง ๆ ถ้าเขียนใหม่ให้เนียนกว่าได้ ให้เขียนใหม่
+- แต่ละ bullet ต้องสั้น กระชับ และมีแค่ประเด็นเดียว
+- ถ้าข้อมูลต้นทางบาง ให้เขียนเท่าที่รู้จริง ห้ามเติม fact ใหม่
+
+{PRODUCT_CONTEXT}
+
+เนื้อหาต้นทาง:
+{CONTENT}`;
+
+const DEFAULT_PROMPT_TEMPLATE = `หน้าที่ของคุณคือเขียนโพสต์ X ภาษาไทยให้เหมือนคนเล่น X จริง ๆ เขียนเอง จากเนื้อหาต้นทางด้านล่าง
+
+โทนที่ต้องได้:
+- ภาษาพูดธรรมชาติ ตรง กระชับ มีจังหวะเหมือนคนเล่าให้เพื่อนฟัง
+- อ่านแล้วรู้สึกมีมุมคิดหรือมุมเล่า ไม่ใช่แค่สรุปข้อมูลทื่อ ๆ
+- ฟีลแบบโพสต์บน X ไทยที่อ่านลื่น แชร์ต่อได้ แต่ไม่เวอร์ ไม่ประดิษฐ์
+- เก็บเฉพาะประเด็นที่มีน้ำหนักจากต้นทาง ห้ามเดาข้อมูลเพิ่ม
+
+รูปแบบบังคับ:
+บรรทัด 1 = ประโยคเปิดสั้น ๆ ที่มีแรงดึงให้อยากอ่านต่อ
+บรรทัด 2 = bullet ข้อแรก ต้องขึ้นต้นด้วย "- "
+บรรทัด 3 = bullet ข้อสอง ต้องขึ้นต้นด้วย "- "
+บรรทัด 4 = ประโยคปิดสั้น ๆ ที่ทิ้งน้ำหนักหรือโยงกลับประเด็นหลัก
+
+กฎที่ต้องทำตามทุกครั้ง:
+- ตอบออกมาเป็น 4 บรรทัดที่มีข้อความจริงเท่านั้น ห้ามมีบรรทัดเกินหรือบรรทัดว่าง
+- ห้ามมีคำนำประเภท "นี่คือโพสต์" "สรุปให้แล้ว" หรือคำอธิบายใด ๆ
+- ห้ามใช้ hashtag, @, ลิงก์, markdown, code block หรือเครื่องหมายอัญประกาศครอบทั้งโพสต์
+- เลี่ยงการคัดลอกถ้อยคำจากต้นทางตรง ๆ ถ้าเรียบเรียงใหม่ให้เนียนกว่าได้ ให้เรียบเรียงใหม่
+- แต่ละ bullet ต้องสั้น กระชับ และมีแค่ประเด็นเดียว
+- ถ้าข้อมูลต้นทางบาง ให้เขียนเท่าที่รู้จริง ห้ามเติม fact ใหม่
+- ถ้าเนื้อหาต้นทางแรงอยู่แล้ว ให้รักษาน้ำหนักนั้นได้ แต่ห้ามดูเหมือน bait เกินจริง
+- หลีกเลี่ยงโทนขายของ โทน PR หรือภาษาที่ดูเหมือนแคปชันโฆษณา
+
+{PRODUCT_CONTEXT}
+
+เนื้อหาต้นทาง:
+{CONTENT}`;
+
+const HOT_TAKE_PROMPT_TEMPLATE = `หน้าที่ของคุณคือเขียนโพสต์ X ภาษาไทยให้เหมือนคนเล่น X จริง ๆ เขียนเอง จากเนื้อหาต้นทางด้านล่าง
+
+โทนที่ต้องได้:
+- ภาษาพูดธรรมชาติ ตรง คม และมีน้ำหนักแบบคนมีมุมมองชัด
+- อ่านแล้วต้องรู้สึกว่าโพสต์นี้มีประเด็น ไม่ใช่แค่สรุปข่าวเฉย ๆ
+- ฟีลแบบโพสต์ X ไทยที่ชวนคิด ชวนเถียงเบา ๆ หรือชวนแชร์ต่อได้ แต่ห้ามเวอร์ ห้ามเฟก
+- เก็บเฉพาะประเด็นที่มีน้ำหนักจากต้นทาง ห้ามเดาข้อมูลเพิ่ม
+
+รูปแบบบังคับ:
+บรรทัด 1 = ประโยคเปิดสั้น ๆ ที่แรงพอให้หยุดอ่าน
+บรรทัด 2 = bullet ข้อแรก ต้องขึ้นต้นด้วย "- "
+บรรทัด 3 = bullet ข้อสอง ต้องขึ้นต้นด้วย "- "
+บรรทัด 4 = ประโยคปิดสั้น ๆ ที่ทิ้งน้ำหนักหรือโยนมุมคิดกลับไปที่ประเด็นหลัก
+
+กฎที่ต้องทำตามทุกครั้ง:
+- ตอบออกมาเป็น 4 บรรทัดที่มีข้อความจริงเท่านั้น ห้ามมีบรรทัดเกินหรือบรรทัดว่าง
+- ห้ามมีคำนำประเภท "นี่คือโพสต์" "สรุปให้แล้ว" หรือคำอธิบายใด ๆ
+- ห้ามใช้ hashtag, @, ลิงก์, markdown, code block หรือเครื่องหมายอัญประกาศครอบทั้งโพสต์
+- เลี่ยงการคัดลอกถ้อยคำจากต้นทางตรง ๆ ถ้าเรียบเรียงใหม่ให้คมกว่าได้ ให้เรียบเรียงใหม่
+- แต่ละ bullet ต้องสั้น กระชับ และมีแค่ประเด็นเดียว
+- ถ้าข้อมูลต้นทางบาง ให้เขียนเท่าที่รู้จริง ห้ามเติม fact ใหม่
+- เปิดได้แรงขึ้นกว่าปกติ แต่ห้าม clickbait และห้ามใส่อารมณ์เกินข้อมูลต้นทาง
+- หลีกเลี่ยงโทนขายของ โทน PR หรือภาษาที่ดูเหมือนแคปชันโฆษณา
+
+{PRODUCT_CONTEXT}
+
+เนื้อหาต้นทาง:
+{CONTENT}`;
+
+const DEFAULT_SETTINGS = {
+    minViews: 500000,
+    typingSpeedMin: 30,
+    typingSpeedMax: 150,
+    pauseEveryChars: 40,
+    pauseMin: 300,
+    pauseMax: 800,
+    scrollPreset: 'medium',
+    manualAssist: false,
+    checkpointEverySteps: 6,
+    pauseOnFound: true,
+    promptMode: 'soft-sell',
+    sessionLimit: 15,
+    dailyLimit: 60,
+    promptTemplate: DEFAULT_PROMPT_TEMPLATE
 };
 const MAX_POST_LENGTH = 280;
 
@@ -69,18 +156,77 @@ function createInitialProgress() {
     };
 }
 
+function createInitialAutoQuoteState() {
+    return {
+        active: false,
+        phase: 'idle',
+        pendingCount: 0,
+        currentDraftId: '',
+        nextRunAt: 0,
+        lastPostedDraftId: '',
+        lastPostedAt: '',
+        lastError: '',
+        message: '',
+        lastUpdated: Date.now()
+    };
+}
+
+async function getAutoQuoteState() {
+    const { autoQuoteState } = await chrome.storage.local.get('autoQuoteState');
+    return { ...createInitialAutoQuoteState(), ...(autoQuoteState || {}) };
+}
+
+async function updateAutoQuoteState(patch = {}, options = {}) {
+    const merge = options.merge !== false;
+    const current = merge ? await getAutoQuoteState() : createInitialAutoQuoteState();
+    const nextState = {
+        ...(merge ? current : createInitialAutoQuoteState()),
+        ...patch,
+        lastUpdated: Date.now()
+    };
+    await chrome.storage.local.set({ autoQuoteState: nextState });
+    return nextState;
+}
+
 function normalizeSettings(settings = {}, options = {}) {
     const merged = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+    merged.promptMode = normalizePromptMode(merged.promptMode);
+    const currentPrompt = typeof merged.promptTemplate === 'string' ? merged.promptTemplate.trim() : '';
+    const canSafelyUpgradePrompt = !currentPrompt
+        || currentPrompt === LEGACY_DEFAULT_PROMPT_TEMPLATE.trim()
+        || currentPrompt === V4_DEFAULT_PROMPT_TEMPLATE.trim()
+        || currentPrompt === DEFAULT_PROMPT_TEMPLATE.trim()
+        || currentPrompt === HOT_TAKE_PROMPT_TEMPLATE.trim();
     const shouldUpgradePrompt = options.forcePromptUpgrade
-        || !merged.promptTemplate
-        || merged.promptTemplateVersion !== PROMPT_TEMPLATE_VERSION;
+        || !currentPrompt
+        || (merged.promptTemplateVersion !== PROMPT_TEMPLATE_VERSION && canSafelyUpgradePrompt);
 
     if (shouldUpgradePrompt) {
-        merged.promptTemplate = DEFAULT_SETTINGS.promptTemplate;
+        merged.promptTemplate = getPromptTemplateForMode(merged.promptMode);
+        merged.promptTemplateVersion = PROMPT_TEMPLATE_VERSION;
+    } else if (merged.promptTemplateVersion !== PROMPT_TEMPLATE_VERSION) {
         merged.promptTemplateVersion = PROMPT_TEMPLATE_VERSION;
     }
 
     return merged;
+}
+
+function normalizePromptMode(mode) {
+    return mode === 'hot-take' ? 'hot-take' : 'soft-sell';
+}
+
+function getPromptTemplateForMode(mode) {
+    return normalizePromptMode(mode) === 'hot-take'
+        ? HOT_TAKE_PROMPT_TEMPLATE
+        : DEFAULT_PROMPT_TEMPLATE;
+}
+
+function isBuiltInPromptTemplate(template) {
+    const normalized = String(template || '').trim();
+    return normalized === LEGACY_DEFAULT_PROMPT_TEMPLATE.trim()
+        || normalized === V4_DEFAULT_PROMPT_TEMPLATE.trim()
+        || normalized === DEFAULT_PROMPT_TEMPLATE.trim()
+        || normalized === HOT_TAKE_PROMPT_TEMPLATE.trim();
 }
 
 async function ensureSettings() {
@@ -114,9 +260,9 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
 // 2) เริ่มต้นระบบ - โหลด Settings
 // =============================================
 chrome.runtime.onInstalled.addListener(async () => {
-    const { settings, autoScoutEnabled, autoScoutQuery: storedQuery, contextProduct: storedProduct, productLink: storedProductLink, trendsCountry: storedTrendsCountry, results, googleTrends } = await chrome.storage.local.get(['settings', 'autoScoutEnabled', 'autoScoutQuery', 'contextProduct', 'productLink', 'trendsCountry', 'results', 'googleTrends']);
+    const { settings, autoScoutEnabled, autoScoutQuery: storedQuery, contextProduct: storedProduct, productLink: storedProductLink, trendsCountry: storedTrendsCountry, results, googleTrends, autoQuoteState } = await chrome.storage.local.get(['settings', 'autoScoutEnabled', 'autoScoutQuery', 'contextProduct', 'productLink', 'trendsCountry', 'results', 'googleTrends', 'autoQuoteState']);
     if (!settings) {
-        await chrome.storage.local.set({ settings: DEFAULT_SETTINGS, drafts: [], viralPosts: [], results: [], googleTrends: [], autoScoutEnabled: false, autoScoutQuery: '', contextProduct: '', productLink: '', trendsCountry: 'TH', autoScoutProgress: createInitialProgress() });
+        await chrome.storage.local.set({ settings: DEFAULT_SETTINGS, drafts: [], viralPosts: [], results: [], googleTrends: [], autoScoutEnabled: false, autoScoutQuery: '', contextProduct: '', productLink: '', trendsCountry: 'TH', autoScoutProgress: createInitialProgress(), autoQuoteState: createInitialAutoQuoteState() });
     } else if (typeof autoScoutEnabled === 'undefined' || typeof storedQuery === 'undefined' || typeof storedProduct === 'undefined' || typeof storedProductLink === 'undefined' || typeof storedTrendsCountry === 'undefined' || typeof results === 'undefined' || typeof googleTrends === 'undefined') {
         await chrome.storage.local.set({
             autoScoutEnabled: Boolean(autoScoutEnabled),
@@ -126,8 +272,11 @@ chrome.runtime.onInstalled.addListener(async () => {
             trendsCountry: typeof storedTrendsCountry === 'string' && storedTrendsCountry ? storedTrendsCountry : 'TH',
             results: Array.isArray(results) ? results : [],
             googleTrends: Array.isArray(googleTrends) ? googleTrends : [],
-            autoScoutProgress: createInitialProgress()
+            autoScoutProgress: createInitialProgress(),
+            autoQuoteState: autoQuoteState ? { ...createInitialAutoQuoteState(), ...autoQuoteState } : createInitialAutoQuoteState()
         });
+    } else if (!autoQuoteState) {
+        await chrome.storage.local.set({ autoQuoteState: createInitialAutoQuoteState() });
     }
     await loadAutoScoutState();
 });
@@ -196,6 +345,9 @@ async function handleMessage(message, sender) {
         case 'GET_AUTO_SCOUT_STATE':
             await loadAutoScoutState();
             return { success: true, data: { enabled: isAutoScoutEnabled, query: autoScoutQuery, product: contextProduct, productLink, trendsCountry, progress: autoScoutProgress } };
+
+        case 'GET_AUTO_QUOTE_STATE':
+            return { success: true, data: await getAutoQuoteState() };
 
         case 'SET_AUTO_SCOUT_STATE':
             isAutoScoutEnabled = Boolean(message.data?.enabled);
@@ -496,6 +648,7 @@ async function startAIQueue() {
         await broadcastStatus('done', 'สร้างคอนเทนต์ทั้งหมดเสร็จสิ้นแล้ว!');
 
         await closeAiWindowIfIdle(true);
+        triggerDeferredAutoQuoteStart(500);
         return;
     }
 
@@ -838,6 +991,87 @@ async function updateDraft(data) {
     return { success: true };
 }
 
+async function updateDraftStatuses(transform) {
+    const { drafts = [], results = [] } = await chrome.storage.local.get(['drafts', 'results']);
+    let changed = false;
+
+    const nextDrafts = drafts.map((draft) => {
+        const nextDraft = transform({ ...draft });
+        if (!nextDraft) {
+            return draft;
+        }
+
+        if (JSON.stringify(nextDraft) !== JSON.stringify(draft)) {
+            changed = true;
+        }
+
+        return nextDraft;
+    });
+
+    if (!changed) {
+        return { success: true, changed: false, drafts };
+    }
+
+    const resultById = new Map(results.map((item) => [item.id, item]));
+    const nextResults = results.map((item) => {
+        const matchingDraft = nextDrafts.find((draft) => draft.id === item.id);
+        if (!matchingDraft) return item;
+        return {
+            ...item,
+            status: matchingDraft.status,
+            postedAt: matchingDraft.postedAt || item.postedAt || '',
+            postError: matchingDraft.postError || ''
+        };
+    });
+
+    await chrome.storage.local.set({ drafts: nextDrafts, results: nextResults });
+    return { success: true, changed: true, drafts: nextDrafts };
+}
+
+async function syncAutoQuoteDraftStatuses(active) {
+    return updateDraftStatuses((draft) => {
+        if (!draft.sourceUrl) return draft;
+
+        if (active && draft.status === 'ready') {
+            return {
+                ...draft,
+                status: 'auto_quote_queued',
+                postError: ''
+            };
+        }
+
+        if (!active && draft.status === 'auto_quote_queued') {
+            return {
+                ...draft,
+                status: 'ready'
+            };
+        }
+
+        return draft;
+    });
+}
+
+async function recoverAutoQuoteDraftStatuses() {
+    return updateDraftStatuses((draft) => {
+        if (!draft.sourceUrl) return draft;
+
+        if (['pending_post', 'posting', 'auto_quote_posting', 'post_error'].includes(draft.status)) {
+            return {
+                ...draft,
+                status: 'auto_quote_queued',
+                postError: ''
+            };
+        }
+
+        return draft;
+    });
+}
+
+async function countPendingAutoQuoteDrafts() {
+    const { drafts = [] } = await chrome.storage.local.get('drafts');
+    return drafts.filter((draft) => ['ready', 'auto_quote_queued', 'posting', 'auto_quote_posting'].includes(draft.status) && draft.sourceUrl).length;
+}
+
 async function clearAllDrafts() {
     await chrome.storage.local.set({ drafts: [] });
     return { success: true };
@@ -851,6 +1085,15 @@ async function postToX(data) {
     const draft = drafts.find(item => item.id === data.id);
     const postText = draft?.finalText || data.text || '';
     const sourceUrl = draft?.sourceUrl || data.sourceUrl || '';
+    const isAutoQuoteRun = Boolean(data.autoQuoteRun);
+    const nextStatus = isAutoQuoteRun ? 'auto_quote_posting' : 'posting';
+
+    await updateDraft({
+        id: data.id,
+        status: nextStatus,
+        postError: '',
+        postStartedAt: new Date().toISOString()
+    });
 
     // หา tab ของ x.com ที่เปิดอยู่
     const tabs = await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] });
@@ -896,79 +1139,275 @@ async function postToX(data) {
         });
     }
 
-    // ส่งข้อความไปให้ content_x.js พิมพ์ในช่อง Compose
-    setTimeout(async () => {
-        await chrome.tabs.sendMessage(targetTabId, {
-            type: 'TYPE_ON_X',
-            data: { text: postText, draftId: data.id, sourceUrl } // sourceUrl ส่งต่อเพื่อ Quote Flow
-        });
-    }, 4500); // เพิ่ม delay เพื่อให้หน้าและ React components โหลดครบ
+    // ส่งข้อความไปให้ content_x.js พิมพ์ในช่อง Compose แล้วกดโพสต์ทันที
+    await sleep(4500);
 
-    // อัปเดตสถานะ draft เป็น ready_for_post แต่ไม่ต้องล็อคตัวเองมากนัก
-    await updateDraft({ id: data.id, status: 'pending_post' });
-    return { success: true };
+    try {
+        const response = await sendMessageToTab(targetTabId, {
+            type: 'TYPE_ON_X',
+            data: { text: postText, draftId: data.id, sourceUrl, autoSubmit: true }
+        });
+
+        if (!response?.success) {
+            throw new Error(response?.error || 'ส่งโพสต์ไปที่ X ไม่สำเร็จ');
+        }
+
+        await updateDraft({
+            id: data.id,
+            status: 'posted',
+            postError: '',
+            postedAt: new Date().toISOString()
+        });
+
+        return { success: true };
+    } catch (error) {
+        await updateDraft({
+            id: data.id,
+            status: 'post_error',
+            postError: error.message || 'ส่งโพสต์ไม่สำเร็จ'
+        });
+        throw error;
+    }
 }
 
 // =============================================
 // AUTO QUOTE SYSTEM
 // =============================================
-let autoQuoteLoopActive = false;
-let autoQuoteTimer = null;
+const AUTO_QUOTE_NEXT_ALARM = 'autoQuote.next';
+const AUTO_QUOTE_RETRY_ALARM = 'autoQuote.retry';
 
-async function startAutoQuoteLoop() {
-    if (autoQuoteLoopActive) return { success: false, message: 'Already running' };
+let autoQuoteCycleInFlight = false;
+let autoQuoteStartRequested = false;
 
-    if (isAiBusy()) {
-        await broadcastStatus('error', 'ยังมีงาน AI/Grok ค้างอยู่ โปรดรอให้สร้างคอนเทนต์เสร็จก่อนเริ่ม Auto Quote');
-        return { success: false, error: 'AI queue is still running' };
+async function clearAutoQuoteAlarm(name) {
+    try {
+        await chrome.alarms.clear(name);
+    } catch {
+        // ignore
+    }
+}
+
+async function clearAllAutoQuoteAlarms() {
+    await Promise.allSettled([
+        clearAutoQuoteAlarm(AUTO_QUOTE_NEXT_ALARM),
+        clearAutoQuoteAlarm(AUTO_QUOTE_RETRY_ALARM)
+    ]);
+}
+
+async function scheduleChromeAlarm(name, delayMs) {
+    const safeDelayMs = Math.max(1000, Math.round(delayMs));
+    await clearAutoQuoteAlarm(name);
+    await chrome.alarms.create(name, { when: Date.now() + safeDelayMs });
+    return Date.now() + safeDelayMs;
+}
+
+async function scheduleAutoQuoteRetry(delayMs = 5000, reason = 'รอ AI/Grok ว่างก่อนเริ่ม Auto Quote') {
+    const nextRunAt = await scheduleChromeAlarm(AUTO_QUOTE_RETRY_ALARM, delayMs);
+    await updateAutoQuoteState({
+        active: true,
+        phase: 'waiting-ai',
+        nextRunAt,
+        message: reason,
+        lastError: ''
+    });
+}
+
+async function scheduleNextAutoQuoteRun(delayMs, patch = {}) {
+    const nextRunAt = await scheduleChromeAlarm(AUTO_QUOTE_NEXT_ALARM, delayMs);
+    await updateAutoQuoteState({
+        active: true,
+        phase: 'waiting-next',
+        nextRunAt,
+        ...patch
+    });
+    return nextRunAt;
+}
+
+function triggerDeferredAutoQuoteStart(delayMs = 500) {
+    if (!autoQuoteStartRequested || autoQuoteCycleInFlight) return;
+    scheduleAutoQuoteRetry(delayMs).catch(console.error);
+}
+
+async function finishAutoQuote(statePatch, status, message) {
+    autoQuoteCycleInFlight = false;
+    autoQuoteStartRequested = false;
+    await clearAllAutoQuoteAlarms();
+    await updateAutoQuoteState({
+        active: false,
+        phase: status === 'error' ? 'idle' : 'done',
+        pendingCount: 0,
+        currentDraftId: '',
+        nextRunAt: 0,
+        ...statePatch
+    });
+    await broadcastStatus(status, message);
+}
+
+async function runAutoQuoteCycle(trigger = 'manual') {
+    if (autoQuoteCycleInFlight) {
+        return { success: true, skipped: true };
     }
 
-    await closeAiWindowIfIdle(true);
+    autoQuoteCycleInFlight = true;
 
-    autoQuoteLoopActive = true;
-
-    // Process loop function
-    const loop = async () => {
-        if (!autoQuoteLoopActive) return;
-
-        try {
-            const { drafts = [] } = await chrome.storage.local.get('drafts');
-            // เลือกเฉพาะอันที่พร้อม และมี sourceUrl
-            const readyDraft = drafts.find(d => d.status === 'ready' && d.sourceUrl);
-
-            if (readyDraft) {
-                console.log('[XVR] Auto-Quoting Draft ID:', readyDraft.id);
-                // สั่งโพสต์ลง X
-                await postToX({ id: readyDraft.id });
-
-                // หน่วงเวลา รอให้คนอาจจะกดส่งเองที่หน้าเว็บ หรือรอระบบพิมพ์เสร็จ
-                // อ่านค่าจาก settings (ใช้เวลาโพสต์ดีเลย์ หรือใช้แบบ random)
-                const { settings } = await chrome.storage.local.get('settings');
-                const defaultMin = parseInt(settings?.autoQuoteMinMinutes || 2, 10);
-                const defaultMax = parseInt(settings?.autoQuoteMaxMinutes || 5, 10);
-
-                // สุ่มเวลา (นาทีเป็นมิลลิวินาที)
-                const delayMs = Math.floor(Math.random() * (defaultMax - defaultMin + 1) + defaultMin) * 60 * 1000;
-
-                console.log(`[XVR] รอ ${delayMs / 60000} นาทีก่อนโพสต์ถัดไป...`);
-                autoQuoteTimer = setTimeout(loop, delayMs);
-            } else {
-                console.log('[XVR] ไม่มี Draft ที่พร้อมสำหรับ Auto Quote แล้วระบบจะหยุดพัก 1 นาทีและเช็คใหม่');
-                autoQuoteTimer = setTimeout(loop, 60000); // เช็คใหม่ทุก 1 นาทีถ้าหมด
-            }
-        } catch (err) {
-            console.error('[XVR] Auto Quote Loop Error:', err);
-            autoQuoteTimer = setTimeout(loop, 30000); // หาก error ลองใหม่ใน 30 วิ
+    try {
+        const currentState = await getAutoQuoteState();
+        if (!currentState.active && !autoQuoteStartRequested) {
+            autoQuoteCycleInFlight = false;
+            return { success: false, error: 'Auto Quote is not active' };
         }
-    };
 
-    loop(); // start
-    return { success: true };
+        if (isAiBusy()) {
+            await broadcastStatus('processing', 'AI/Grok ยังทำงานอยู่ Auto Quote จะเริ่มให้อัตโนมัติเมื่อคิวว่าง');
+            await scheduleAutoQuoteRetry(5000);
+            autoQuoteCycleInFlight = false;
+            return { success: true, deferred: true };
+        }
+
+        await clearAllAutoQuoteAlarms();
+        await closeAiWindowIfIdle(true);
+        await recoverAutoQuoteDraftStatuses();
+        await syncAutoQuoteDraftStatuses(true);
+
+        const pendingCount = await countPendingAutoQuoteDrafts();
+        if (pendingCount === 0) {
+            await finishAutoQuote({
+                lastError: 'ไม่มี draft ที่พร้อมสำหรับ Auto Quote',
+                message: 'ไม่มี draft ที่พร้อมสำหรับ Auto Quote'
+            }, 'error', 'ไม่มี draft ที่พร้อมสำหรับ Auto Quote');
+            return { success: false, error: 'ไม่มี draft ที่พร้อมสำหรับ Auto Quote' };
+        }
+
+        const { drafts = [] } = await chrome.storage.local.get('drafts');
+        const readyDraft = drafts.find(draft => ['auto_quote_queued', 'ready'].includes(draft.status) && draft.sourceUrl);
+
+        if (!readyDraft) {
+            await finishAutoQuote({
+                lastError: '',
+                message: 'Auto Quote ไม่มี draft ที่รอโพสต์แล้ว'
+            }, 'done', 'Auto Quote ไม่มี draft ที่รอโพสต์แล้ว');
+            return { success: true, done: true };
+        }
+
+        await updateDraft({ id: readyDraft.id, status: 'auto_quote_posting', postError: '' });
+        await updateAutoQuoteState({
+            active: true,
+            phase: 'posting',
+            pendingCount,
+            currentDraftId: readyDraft.id,
+            nextRunAt: 0,
+            lastError: '',
+            message: `กำลังโพสต์ draft ${readyDraft.id}`
+        });
+        await broadcastStatus('processing', `Auto Quote กำลังโพสต์ draft ${readyDraft.id}`);
+        await postToX({ id: readyDraft.id, autoQuoteRun: true });
+
+        const { settings } = await chrome.storage.local.get('settings');
+        const defaultMin = parseInt(settings?.autoQuoteMinMinutes || 2, 10);
+        const defaultMax = parseInt(settings?.autoQuoteMaxMinutes || 5, 10);
+        const remainingCount = await countPendingAutoQuoteDrafts();
+        const postedAt = new Date().toISOString();
+
+        if (remainingCount === 0) {
+            await finishAutoQuote({
+                lastPostedDraftId: readyDraft.id,
+                lastPostedAt: postedAt,
+                lastError: '',
+                message: 'Auto Quote โพสต์ครบทุก draft แล้ว'
+            }, 'done', 'Auto Quote โพสต์ครบทุก draft แล้ว');
+            return { success: true, done: true };
+        }
+
+        const delayMs = Math.floor(Math.random() * (defaultMax - defaultMin + 1) + defaultMin) * 60 * 1000;
+        const nextRunAt = await scheduleNextAutoQuoteRun(delayMs, {
+            pendingCount: remainingCount,
+            currentDraftId: '',
+            lastPostedDraftId: readyDraft.id,
+            lastPostedAt: postedAt,
+            lastError: '',
+            message: `โพสต์แล้ว 1 รายการ เหลือ ${remainingCount} รายการ`
+        });
+
+        autoQuoteCycleInFlight = false;
+        await broadcastStatus('processing', `โพสต์แล้ว 1 รายการ เหลือ ${remainingCount} รายการ รอ ${Math.round((nextRunAt - Date.now()) / 60000)} นาที`);
+        return { success: true, scheduled: true, nextRunAt };
+    } catch (err) {
+        console.error('[XVR] Auto Quote Cycle Error:', err);
+        const nextRunAt = await scheduleChromeAlarm(AUTO_QUOTE_RETRY_ALARM, 30000);
+        await updateAutoQuoteState({
+            active: true,
+            phase: 'retrying',
+            nextRunAt,
+            lastError: err.message || 'Auto Quote ทำงานไม่สำเร็จ',
+            message: 'Auto Quote มีปัญหา กำลังลองใหม่อัตโนมัติ'
+        });
+        autoQuoteCycleInFlight = false;
+        await broadcastStatus('error', err.message || 'Auto Quote ทำงานไม่สำเร็จ');
+        return { success: false, error: err.message || 'Auto Quote ทำงานไม่สำเร็จ' };
+    }
+}
+
+async function restoreAutoQuoteScheduling() {
+    const state = await getAutoQuoteState();
+    if (!state.active) return;
+
+    autoQuoteStartRequested = true;
+
+    if (isAiBusy()) {
+        await scheduleAutoQuoteRetry(Math.max(1000, (state.nextRunAt || 0) - Date.now() || 5000));
+        return;
+    }
+
+    if (['waiting-next', 'retrying', 'waiting-ai'].includes(state.phase) && state.nextRunAt) {
+        const remainingMs = state.nextRunAt - Date.now();
+        if (remainingMs <= 1500) {
+            await runAutoQuoteCycle('restore');
+            return;
+        }
+
+        const alarmName = state.phase === 'waiting-next' ? AUTO_QUOTE_NEXT_ALARM : AUTO_QUOTE_RETRY_ALARM;
+        await scheduleChromeAlarm(alarmName, remainingMs);
+        return;
+    }
+
+    await runAutoQuoteCycle('restore');
+}
+
+async function startAutoQuoteLoop() {
+    const currentState = await getAutoQuoteState();
+    if (currentState.active || autoQuoteStartRequested || autoQuoteCycleInFlight) {
+        return { success: true, alreadyRunning: true };
+    }
+
+    autoQuoteStartRequested = true;
+    await updateAutoQuoteState({
+        active: true,
+        phase: 'starting',
+        pendingCount: await countPendingAutoQuoteDrafts(),
+        currentDraftId: '',
+        nextRunAt: 0,
+        lastError: '',
+        message: 'กำลังเตรียม Auto Quote'
+    });
+
+    return runAutoQuoteCycle('manual');
 }
 
 async function stopAutoQuoteLoop() {
-    autoQuoteLoopActive = false;
-    if (autoQuoteTimer) clearTimeout(autoQuoteTimer);
+    autoQuoteCycleInFlight = false;
+    autoQuoteStartRequested = false;
+    await clearAllAutoQuoteAlarms();
+    await syncAutoQuoteDraftStatuses(false);
+    await updateAutoQuoteState({
+        active: false,
+        phase: 'idle',
+        pendingCount: 0,
+        currentDraftId: '',
+        nextRunAt: 0,
+        lastError: '',
+        message: 'หยุด Auto Quote แล้ว'
+    });
+    await broadcastStatus('done', 'หยุด Auto Quote แล้ว');
     return { success: true };
 }
 
@@ -981,7 +1420,22 @@ async function getSettings() {
 }
 
 async function saveSettings(newSettings) {
-    const settings = normalizeSettings({ ...newSettings, promptTemplateVersion: PROMPT_TEMPLATE_VERSION });
+    const previousSettings = await ensureSettings();
+    const nextPromptMode = normalizePromptMode(newSettings?.promptMode);
+    const nextPromptTemplate = typeof newSettings?.promptTemplate === 'string'
+        ? newSettings.promptTemplate
+        : previousSettings.promptTemplate;
+    const promptChangedManually = nextPromptTemplate.trim() !== String(previousSettings.promptTemplate || '').trim();
+    const shouldSwapPresetTemplate = !promptChangedManually
+        && isBuiltInPromptTemplate(previousSettings.promptTemplate)
+        && normalizePromptMode(previousSettings.promptMode) !== nextPromptMode;
+
+    const settings = normalizeSettings({
+        ...newSettings,
+        promptMode: nextPromptMode,
+        promptTemplate: shouldSwapPresetTemplate ? getPromptTemplateForMode(nextPromptMode) : nextPromptTemplate,
+        promptTemplateVersion: PROMPT_TEMPLATE_VERSION
+    });
     await chrome.storage.local.set({ settings });
 
     const tabs = await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] });
@@ -1123,39 +1577,39 @@ function sanitizeSourceText(text) {
 }
 
 function buildPrompt(sourcePost, settings, product) {
+    const promptMode = normalizePromptMode(settings?.promptMode);
     const cleanContent = sanitizeSourceText(sourcePost?.text || '');
     const productUrl = productLink || sourcePost?.productLink || '';
     const charBudget = getBodyCharacterBudget(productUrl);
     const sourceContentContext = '- ใช้เนื้อหาจากทั้งโพสต์ได้ รวมถึงข้อความหลัง hashtag แต่ไม่ต้องคัดลอก hashtag หรือลิงก์จากต้นทางมาใช้ตรงๆ';
     const outputOnlyContext = '- ตอบกลับเฉพาะข้อความโพสต์สุดท้ายเพียงอย่างเดียว ห้ามมีคำอธิบาย ห้ามมี markdown ห้ามมี code block และห้ามมีข้อความสถานะ เช่น Executed code';
-    const bulletContext = '- หลังบรรทัดเปิด ต้องมี bullet อย่างน้อย 1 บรรทัด โดยแต่ละ bullet ต้องขึ้นต้นด้วย -';
+    const bulletContext = '- ต้องออกมาเป็น 4 บรรทัดเท่านั้น โดยบรรทัด 2 และ 3 ต้องขึ้นต้นด้วย -';
+    const modeContext = promptMode === 'hot-take'
+        ? '- โทนรวมต้องคมขึ้น มีน้ำหนักแบบคนมีมุมชัด แต่ยังดูเป็นธรรมชาติและไม่ใส่อารมณ์เกินข้อมูลจริง'
+        : '- โทนรวมต้องเนียน อ่านลื่น และถ้ามีการขายต้องฟีลเหมือนพูดแทรก ไม่ใช่โหมดปิดการขาย';
     const productContext = product
-        ? `- ถ้ามีจังหวะที่เหมาะ ให้เชื่อมโยงกับสินค้า/บริการนี้แบบเนียนๆ ไม่ hard sell: ${product}`
+        ? `- ถ้ามีจังหวะที่เหมาะ ค่อยเชื่อมโยงกับสินค้า/บริการนี้เพียง 1 จุดแบบเนียนๆ เหมือนพูดแทรกจากประสบการณ์ตรง ห้าม hard sell ห้ามภาษาโฆษณา: ${product}`
         : '';
     const exactLengthContext = [
         '- ระบบจะต่อท้ายข้อความด้วยลิงก์สินค้าอัตโนมัติ และจะใช้โพสต์ต้นทางทำ Quote แยกต่างหาก',
         `- ข้อความที่ AI สร้างได้เองต้องยาว ${charBudget} ตัวอักษรพอดี`,
         `- เมื่อนำข้อความนี้ไปรวมกับลิงก์สินค้า ${productUrl || '(ไม่มี)'} รวมทั้งทุกตัวอักษร ช่องว่าง เครื่องหมาย ?, -, การขึ้นบรรทัดใหม่ และลิงก์ทั้งหมด ความยาวรวมต้องเท่ากับ ${MAX_POST_LENGTH} ตัวอักษรพอดี`
     ].join('\n');
+    const dynamicContext = [sourceContentContext, outputOnlyContext, bulletContext, modeContext, productContext, exactLengthContext]
+        .filter(Boolean)
+        .join('\n');
 
     let template = settings?.promptTemplate || DEFAULT_SETTINGS.promptTemplate;
     template = template.replace('{CONTENT}', cleanContent || sourcePost?.text || '');
     template = template.replace('{PRODUCT_URL}', productUrl || '(ไม่มี)');
-    template = template.replace('{PRODUCT_CONTEXT}', [sourceContentContext, outputOnlyContext, bulletContext, productContext, exactLengthContext].filter(Boolean).join('\n'));
+    template = template.replace('{PRODUCT_CONTEXT}', dynamicContext);
 
-    // ถ้าใน template มีบอกเรื่องความยาว 247 แล้ว ให้ข้ามการต่อท้ายบริบทบังคับบางตัวเพื่อไม่ให้มันสับสน
-    if (!template.includes('247')) {
-        if (!template.includes(sourceContentContext)) template += `\n${sourceContentContext}`;
-        if (!template.includes(outputOnlyContext)) template += `\n${outputOnlyContext}`;
-        if (!template.includes(bulletContext)) template += `\n${bulletContext}`;
-        if (!template.includes(exactLengthContext)) template += `\n${exactLengthContext}`;
-        if (productContext && !template.includes(productContext)) template += `\n${productContext}`;
-    } else {
-        if (productContext && !template.includes(productContext)) {
-            // แทรก product context อย่างเดียวแบบเบาๆ
-            template = template.replace('สามารถแทรกสินค้าแบบไม่ยัดเยียด', `สามารถแทรกสินค้า (${product}) แบบไม่ยัดเยียด`);
-        }
-    }
+    if (!template.includes(sourceContentContext)) template += `\n${sourceContentContext}`;
+    if (!template.includes(outputOnlyContext)) template += `\n${outputOnlyContext}`;
+    if (!template.includes(bulletContext)) template += `\n${bulletContext}`;
+    if (!template.includes(modeContext)) template += `\n${modeContext}`;
+    if (!template.includes(exactLengthContext)) template += `\n${exactLengthContext}`;
+    if (productContext && !template.includes(productContext)) template += `\n${productContext}`;
 
     return template.replace(/\n{3,}/g, '\n\n').trim();
 }
@@ -1164,7 +1618,7 @@ function buildFinalPostText(text, productUrl) {
     const cleanProductUrl = String(productUrl || '').trim();
     const trailingParts = [cleanProductUrl].filter(Boolean);
     const bodyBudget = getBodyCharacterBudget(cleanProductUrl);
-    const normalizedBody = normalizeDraftStructure(text);
+    const normalizedBody = enforceFourLinePostStructure(normalizeDraftStructure(text));
     let finalBody = trimToCharLimit(normalizedBody, bodyBudget);
     let finalText = joinPostSegments(finalBody, trailingParts);
 
@@ -1252,7 +1706,7 @@ function normalizeDraftStructure(text) {
         }
     }
 
-    return outputLines.join('\n');
+    return enforceFourLinePostStructure(outputLines.join('\n'));
 }
 
 function buildStructuredSingleParagraph(text) {
@@ -1262,18 +1716,70 @@ function buildStructuredSingleParagraph(text) {
         .filter(Boolean);
 
     if (segments.length >= 3) {
-        return [
+        return enforceFourLinePostStructure([
             segments[0],
             ...segments.slice(1, -1).map(ensureBulletLine),
             segments[segments.length - 1]
-        ].join('\n');
+        ].join('\n'));
     }
 
     if (segments.length === 2) {
-        return [segments[0], ensureBulletLine(segments[1])].join('\n');
+        return enforceFourLinePostStructure([segments[0], ensureBulletLine(segments[1])].join('\n'));
     }
 
-    return [segments[0], ensureBulletLine(segments[0])].join('\n');
+    return enforceFourLinePostStructure([segments[0], ensureBulletLine(segments[0])].join('\n'));
+}
+
+function enforceFourLinePostStructure(text) {
+    const normalized = normalizeWhitespace(text);
+    if (!normalized) return '';
+
+    const lines = normalized
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !isUrlOnly(line));
+
+    if (!lines.length) return '';
+
+    const segments = extractContentSegments(normalized);
+    const opener = stripBulletPrefix(lines[0]) || segments[0] || '';
+    const closerCandidates = [
+        ...lines.slice(1).map(stripBulletPrefix),
+        ...segments.slice(1)
+    ].filter(Boolean);
+
+    const bulletPool = [
+        ...lines.slice(1).map(stripBulletPrefix),
+        ...segments.slice(1)
+    ].filter(Boolean);
+
+    const uniqueBulletPool = Array.from(new Set(bulletPool.filter(item => item !== opener)));
+    const bulletOne = uniqueBulletPool[0] || opener;
+    const bulletTwo = uniqueBulletPool[1] || uniqueBulletPool[0] || opener;
+
+    let closer = closerCandidates[closerCandidates.length - 1] || bulletTwo || opener;
+    if (closer === bulletTwo && uniqueBulletPool[2]) {
+        closer = uniqueBulletPool[2];
+    }
+    if (closer === opener && uniqueBulletPool[1]) {
+        closer = uniqueBulletPool[1];
+    }
+
+    return [
+        opener,
+        ensureBulletLine(bulletOne),
+        ensureBulletLine(bulletTwo),
+        stripBulletPrefix(closer)
+    ].join('\n');
+}
+
+function extractContentSegments(text) {
+    return String(text || '')
+        .split(/\n+|(?<=[.!?])\s+|\s+[•-]\s+/)
+        .map(segment => stripBulletPrefix(segment))
+        .map(segment => segment.trim())
+        .filter(Boolean)
+        .filter(segment => !isUrlOnly(segment));
 }
 
 function ensureBulletLine(line) {
@@ -1344,4 +1850,24 @@ chrome.windows.onRemoved.addListener((windowId) => {
         aiWindowId = null;
         aiTabId = null;
     }
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (![AUTO_QUOTE_NEXT_ALARM, AUTO_QUOTE_RETRY_ALARM].includes(alarm?.name)) {
+        return;
+    }
+
+    runAutoQuoteCycle(`alarm:${alarm.name}`).catch((error) => {
+        console.error('[XVR] Auto Quote alarm error:', error);
+    });
+});
+
+chrome.runtime.onStartup?.addListener(() => {
+    restoreAutoQuoteScheduling().catch((error) => {
+        console.error('[XVR] Auto Quote startup restore failed:', error);
+    });
+});
+
+restoreAutoQuoteScheduling().catch((error) => {
+    console.error('[XVR] Auto Quote initial restore failed:', error);
 });

@@ -233,10 +233,19 @@
             </div>
 
             <div class="form-group">
+                <label>Prompt Mode</label>
+                <select id="promptMode">
+                    <option value="soft-sell">Soft Sell</option>
+                    <option value="hot-take">Hot Take</option>
+                </select>
+                <span class="input-hint">Soft Sell จะเน้นขายเนียน ๆ ส่วน Hot Take จะเปิดแรงและมีน้ำหนักเชิงความเห็นมากขึ้น</span>
+            </div>
+
+            <div class="form-group">
                 <label>Prompt Template</label>
                 <textarea id="promptTemplate" rows="10"
                     placeholder="ใส่ Prompt ที่ต้องการ...ใช้ {CONTENT} เป็นตัวแทนเนื้อหาต้นทาง"></textarea>
-                <span class="input-hint">ระบบจะบังคับให้ข้อความสุดท้ายรวมลิงก์สินค้าแล้วไม่เกิน 280 ตัวอักษร</span>
+                <span class="input-hint">ระบบจะใช้ Prompt Mode เป็น style layer เพิ่มอีกชั้น และบังคับข้อความสุดท้ายรวมลิงก์สินค้าแล้วไม่เกิน 280 ตัวอักษร</span>
             </div>
 
             <div class="form-group">

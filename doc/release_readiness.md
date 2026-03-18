@@ -19,6 +19,9 @@
 - draft/result persistence มีแล้ว
 - queue persistence มีแล้ว
 - auto quote มีการกันไม่ให้ชนกับ AI queue
+- auto quote scheduler ใช้ `chrome.alarms` แล้ว จึงเหมาะกับ MV3 กว่าเดิม
+- side panel มี countdown และสถานะ Auto Quote ตาม state จริง
+- prompt mode และ output normalization ทำให้ draft มีรูปแบบสม่ำเสมอขึ้น
 - prompt และข้อความสุดท้ายมี normalization ฝั่ง background
 - error diagnostics จาก editor ตอนนี้ไม่มี
 
@@ -60,13 +63,18 @@
 
 ตอนนี้ยังต้องไล่ผ่าน console และ code เป็นหลัก
 
+### 5. ยังไม่มี end-to-end verification harness
+
+แม้ `content_x.js` จะมี post verification หลังคลิก submit แล้ว แต่การยืนยันยังเป็น heuristic จาก DOM/live-region ของ X ไม่ใช่ browser test แบบ deterministic
+
 ## สิ่งที่ควรทำก่อน public release
 
 1. เพิ่ม `.gitignore` และแยก repo ให้ชัด
-2. เพิ่ม watchdog queue timeout
+2. เพิ่ม watchdog queue timeout สำหรับ AI generation flow
 3. เพิ่ม debug stage logging ที่อ่านได้จาก UI
 4. ลดการใช้ popup blocking ใน side panel
 5. เพิ่ม smoke test checklist ก่อนปล่อยทุกครั้ง
+6. ทดสอบ Auto Quote หลัง `chrome://extensions` reload เพื่อยืนยัน permission `alarms` ทำงานตามคาด
 
 ## Smoke Test Checklist
 
@@ -104,6 +112,8 @@
 - เปิด source tweet ได้
 - เปิด quote composer ได้
 - เติมข้อความเข้า compose ได้จริง
+- กดโพสต์อัตโนมัติได้จริง
+- countdown หมดเวลาแล้วรอบถัดไปยังทำงานต่อได้
 
 ## Recommended Next Milestone
 
@@ -113,5 +123,10 @@ milestone ถัดไปที่คุ้มที่สุด:
 - add queue watchdog
 - add debug mode
 - add unit tests for text utilities
+
+## Snapshot Notes
+
+- ถ้าอัปเดตจาก snapshot เก่ามายังรอบนี้ ต้อง `Reload` extension เพื่อรับ permission `alarms`
+- ในเชิง grounded review รอบนี้ Auto Quote ดีขึ้นชัดเจน แต่ยังไม่ควรสื่อสารว่า stable ต่อ DOM changes ของ X
 
 ถ้าทำ 4 อย่างนี้ก่อน release รอบใหญ่ ความเสี่ยงหลักของโปรเจกต์จะลดลงชัดเจน

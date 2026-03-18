@@ -62,7 +62,7 @@
 
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.type === 'TYPE_ON_X') {
-            typeOnXCompose(message.data).then(() => sendResponse({ success: true })).catch((error) => {
+            typeOnXCompose(message.data).then((result) => sendResponse({ success: true, ...(result || {}) })).catch((error) => {
                 console.error(error);
                 sendResponse({ success: false, error: error.message });
             });
@@ -608,6 +608,7 @@
     async function typeOnXCompose(payload) {
         const text = typeof payload === 'string' ? payload : (payload?.text || '');
         const sourceUrl = typeof payload === 'string' ? '' : (payload?.sourceUrl || '');
+        const autoSubmit = typeof payload === 'string' ? false : payload?.autoSubmit !== false;
 
         if (sourceUrl) {
             try {
@@ -648,7 +649,14 @@
 
         await fillComposeText(composeBox, text);
 
+        if (autoSubmit) {
+            await submitComposePost(composeBox, text);
+            showToast('✅ โพสต์สำเร็จแล้ว', 'success');
+            return { posted: true };
+        }
+
         showToast('✅ ข้อความพร้อมแล้ว! กดปุ่ม Post ได้เลย', 'success');
+        return { posted: false };
     }
 
     async function openQuoteComposer(sourceUrl) {
@@ -820,6 +828,121 @@
         }
     }
 
+    async function submitComposePost(composeBox, expectedText) {
+        const feedbackBaseline = collectPostFeedbackTexts();
+        const submitButton = await waitForPostButton(8000);
+        if (!submitButton) {
+            throw new Error('ไม่พบปุ่ม Post บน X');
+        }
+
+        submitButton.focus?.();
+        submitButton.click();
+
+        const submissionResult = await waitForComposeSubmission(composeBox, expectedText, feedbackBaseline, 12000);
+        if (!submissionResult.success) {
+            throw new Error(submissionResult.error || 'กดโพสต์แล้วแต่ยังไม่ยืนยันว่าโพสต์สำเร็จ');
+        }
+    }
+
+    async function waitForPostButton(timeout = 8000) {
+        const startedAt = Date.now();
+
+        while (Date.now() - startedAt < timeout) {
+            const button = collectPostButtons().find(btn => btn && isVisible(btn) && !isDisabled(btn));
+            if (button) return button;
+            await sleep(250);
+        }
+
+        return null;
+    }
+
+    function collectPostButtons() {
+        const selectors = [
+            'button[data-testid="tweetButtonInline"]',
+            'button[data-testid="tweetButton"]',
+            '[data-testid="tweetButtonInline"]',
+            '[data-testid="tweetButton"]'
+        ];
+
+        const buttons = selectors.flatMap(selector => Array.from(document.querySelectorAll(selector)));
+        return Array.from(new Set(buttons)).sort((a, b) => {
+            const aDialog = a.closest('[role="dialog"]') ? 1 : 0;
+            const bDialog = b.closest('[role="dialog"]') ? 1 : 0;
+            return bDialog - aDialog;
+        });
+    }
+
+    async function waitForComposeSubmission(composeBox, expectedText, feedbackBaseline = new Set(), timeout = 8000) {
+        const startedAt = Date.now();
+        let stableSuccessCount = 0;
+
+        while (Date.now() - startedAt < timeout) {
+            const feedbackState = getPostFeedbackState(feedbackBaseline);
+            if (feedbackState.error) {
+                return { success: false, error: feedbackState.error };
+            }
+
+            if (feedbackState.success) {
+                return { success: true, verifiedBy: 'feedback' };
+            }
+
+            if (!document.body.contains(composeBox)) {
+                return { success: true, verifiedBy: 'composer-removed' };
+            }
+
+            const currentText = (composeBox.innerText || composeBox.textContent || composeBox.value || '').trim();
+            const submitButton = collectPostButtons().find(btn => btn && isVisible(btn));
+            const textCleared = !currentText || !composeTextLooksApplied(composeBox, expectedText);
+            const submitUnavailable = !submitButton || isDisabled(submitButton);
+
+            if (textCleared && submitUnavailable) {
+                stableSuccessCount += 1;
+                if (stableSuccessCount >= 3) {
+                    return { success: true, verifiedBy: 'compose-cleared' };
+                }
+            } else {
+                stableSuccessCount = 0;
+            }
+
+            await sleep(300);
+        }
+
+        return { success: false, error: 'หมดเวลารอยืนยันว่าโพสต์สำเร็จ' };
+    }
+
+    function collectPostFeedbackTexts() {
+        const selectors = [
+            '[role="alert"]',
+            '[aria-live="assertive"]',
+            '[aria-live="polite"]',
+            '[data-testid*="toast"]'
+        ];
+
+        const texts = selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+            .map((element) => (element.innerText || element.textContent || '').trim())
+            .filter(Boolean);
+
+        return new Set(texts);
+    }
+
+    function getPostFeedbackState(baseline) {
+        const successPattern = /(your post was sent|your post was posted|posted successfully|ส่งโพสต์แล้ว|โพสต์แล้ว|โพสต์ของคุณถูกส่งแล้ว)/i;
+        const errorPattern = /(something went wrong|try again|failed to post|post failed|โพสต์ไม่สำเร็จ|เกิดข้อผิดพลาด|ลองอีกครั้ง)/i;
+        const currentTexts = Array.from(collectPostFeedbackTexts()).filter((text) => !baseline.has(text));
+
+        const errorText = currentTexts.find((text) => errorPattern.test(text));
+        if (errorText) {
+            return { success: false, error: errorText };
+        }
+
+        const successText = currentTexts.find((text) => successPattern.test(text));
+        if (successText) {
+            return { success: true, message: successText };
+        }
+
+        return { success: false, error: '' };
+    }
+
     // =============================================
     // 8) Human-like Typing (สำหรับพิมพ์ใน Compose ของ X)
     // =============================================
@@ -963,6 +1086,17 @@
         if (element.form && typeof element.form.requestSubmit === 'function') {
             element.form.requestSubmit();
         }
+    }
+
+    function isDisabled(element) {
+        return Boolean(element?.disabled) || element?.getAttribute('aria-disabled') === 'true';
+    }
+
+    function isVisible(element) {
+        if (!element) return false;
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
     }
 
     function waitForNextFrame() {
