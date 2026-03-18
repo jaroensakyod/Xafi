@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "X Viral Repurpose",
+  "version": "1.0.0",
+  "description": "ค้นหาโพสต์ Viral บน X (500k+ views) แล้วสร้างคอนเทนต์ด้วย AI บน grok.com แบบอัตโนมัติ",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "activeTab",
+    "tabs",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://x.com/*",
+    "https://twitter.com/*",
+    "https://grok.com/*",
+    "https://trends.google.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["content_x.js"],
+      "css": ["content_x.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://grok.com/*"],
+      "js": ["content_ai.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "X Viral Repurpose"
+  }
+}

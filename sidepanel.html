@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>X Viral Repurpose</title>
+    <link rel="stylesheet" href="sidepanel.css">
+</head>
+
+<body>
+    <!-- ===== Header ===== -->
+    <header class="header">
+        <div class="header-top">
+            <h1>🔥 X Viral Repurpose</h1>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="btnAutoScout" class="btn-small"
+                    style="background:#4b5563; color:white; border:none; border-radius:4px; padding:4px 8px; cursor:pointer; font-size:12px;">🤖
+                    Auto Scout: OFF</button>
+                <div id="statusBadge" class="status-badge status-idle">Idle</div>
+            </div>
+        </div>
+        <p class="header-sub">ค้นหาโพสต์ Viral → สร้างคอนเทนต์ด้วย AI</p>
+        <div class="auto-scout-bar">
+            <input id="autoScoutQuery" class="auto-scout-input" type="text"
+                placeholder="พิมพ์คำค้นที่อยากให้ไปหา เช่น #aitools, #bitcoin, #startup" />
+        </div>
+        <div class="auto-scout-bar">
+            <input id="contextProduct" class="auto-scout-input" type="text"
+                placeholder="สินค้า/บริการที่อยากผูกกับคอนเทนต์ เช่น คอร์ส AI, SaaS, ebook" />
+        </div>
+        <div class="auto-scout-bar">
+            <input id="productLink" class="auto-scout-input" type="url"
+                placeholder="ลิงก์สินค้า/บริการ เช่น https://example.com/product" />
+        </div>
+        <div class="affiliate-shortcut-row">
+            <button id="openAffiliateProductOffer" class="btn-small affiliate-shortcut-btn"
+                type="button">เชื่อมต่อลิงก์สินค้า Shopee Affiliate</button>
+        </div>
+        <div class="header-actions-row">
+            <button id="btnScoutStep" class="btn-small">⤵ Step Scroll</button>
+            <button id="btnScoutResume" class="btn-small">▶ Resume</button>
+            <a id="openResultsPage" class="btn-small" href="#">📚 Results</a>
+            <button id="openLatestResult" class="btn-small">🆕 Latest</button>
+        </div>
+    </header>
+
+    <!-- ===== Tab Navigation ===== -->
+    <nav class="tabs">
+        <button class="tab active" data-tab="drafts">
+            📝 Drafts <span id="draftCount" class="tab-badge">0</span>
+        </button>
+        <button class="tab" data-tab="results">
+            📚 Results <span id="resultCount" class="tab-badge">0</span>
+        </button>
+        <button class="tab" data-tab="found">
+            🔍 Found <span id="foundCount" class="tab-badge">0</span>
+        </button>
+        <button class="tab" data-tab="queue">
+            ⏳ Queue <span id="queueCount" class="tab-badge">0</span>
+        </button>
+        <button class="tab" data-tab="settings">
+            ⚙️ Settings
+        </button>
+    </nav>
+
+    <!-- ===== Status Bar ===== -->
+    <div id="statusBar" class="status-bar hidden">
+        <div class="status-bar-inner">
+            <div class="spinner"></div>
+            <span id="statusText">กำลังประมวลผล...</span>
+        </div>
+    </div>
+
+    <section class="progress-panel">
+        <div class="progress-grid">
+            <div class="progress-item">
+                <span class="progress-label">คำค้น</span>
+                <strong id="progressQuery">-</strong>
+            </div>
+            <div class="progress-item">
+                <span class="progress-label">สินค้า</span>
+                <strong id="progressProduct">-</strong>
+            </div>
+            <div class="progress-item">
+                <span class="progress-label">Preset</span>
+                <strong id="progressPreset">medium</strong>
+            </div>
+            <div class="progress-item">
+                <span class="progress-label">Steps</span>
+                <strong id="progressSteps">0</strong>
+            </div>
+            <div class="progress-item">
+                <span class="progress-label">Found / Session</span>
+                <strong id="progressFound">0</strong>
+            </div>
+            <div class="progress-item">
+                <span class="progress-label">สถานะ</span>
+                <strong id="progressPauseReason">พร้อม</strong>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Tab: Drafts ===== -->
+    <section id="tab-drafts" class="tab-content active">
+        <div class="section-header">
+            <h2>ข้อความที่ AI สร้างไว้</h2>
+            <div style="display: flex; gap: 8px;">
+                <button id="btnAutoQuote" class="btn-small btn-primary" title="เปิดโหมดสุ่มลุย Quote อัตโนมัติ"
+                    style="background:#10b981;">🚀 เริ่ม Auto Quote</button>
+                <button id="clearDrafts" class="btn-small btn-danger" title="ลบทั้งหมด">🗑️ ลบทั้งหมด</button>
+            </div>
+        </div>
+        <div class="auto-quote-status hidden" id="autoQuoteStatus"
+            style="font-size: 0.85em; color: #10b981; margin-bottom: 8px; font-weight: bold;">
+            ⏳ ระบบ Auto Quote ทำงานอยู่ - กำลังลุย Draft ตามคิว
+        </div>
+        <div id="draftList" class="card-list">
+            <div class="empty-state">
+                <p>📭 ยังไม่มี Draft</p>
+                <p class="hint">กดปุ่ม "🔥 AI Create Post" บนโพสต์ Viral เพื่อเริ่มสร้าง</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="tab-results" class="tab-content">
+        <div class="section-header">
+            <h2>Results Library</h2>
+            <button id="clearResultsBtn" class="btn-small btn-danger" title="ลบทั้งหมด">🗑️ ลบทั้งหมด</button>
+        </div>
+        <div id="resultsPreviewList" class="card-list"></div>
+    </section>
+
+    <!-- ===== Tab: Found (Viral Posts) ===== -->
+    <section id="tab-found" class="tab-content">
+        <div class="section-header">
+            <div class="section-header-title-row">
+                <h2>Google Trends วันนี้</h2>
+                <button id="toggleTrendsPanel" class="btn-small section-toggle-btn" type="button"
+                    aria-expanded="true">ย่อ</button>
+            </div>
+            <div class="found-toolbar">
+                <select id="trendsCountry" class="compact-select">
+                    <option value="TH">TH</option>
+                    <option value="US">US</option>
+                    <option value="JP">JP</option>
+                </select>
+                <button id="refreshTrends" class="btn-small" title="รีเฟรชคำค้น">↻ รีเฟรช</button>
+            </div>
+        </div>
+        <div id="trendListWrap" class="collapsible-section is-expanded">
+            <div id="trendList" class="card-list compact-list">
+                <div class="empty-state">
+                    <p>📈 ยังไม่มีคำฮิตวันนี้</p>
+                </div>
+            </div>
+        </div>
+        <div class="section-header">
+            <h2>โพสต์ Viral ที่พบ</h2>
+            <div style="display: flex; gap: 8px;">
+                <button id="batchCreateAiBtn" class="btn-small btn-primary" title="สร้างคอนเทนต์จากที่เลือกไว้"
+                    style="background: #8b5cf6;">เข้าคิว AI (<span id="batchCount">0</span>)</button>
+                <button id="clearFound" class="btn-small btn-danger" title="ลบทั้งหมด">🗑️ ลบทั้งหมด</button>
+            </div>
+        </div>
+        <div id="foundList" class="card-list">
+            <div class="empty-state">
+                <p>🔍 ยังไม่พบโพสต์ Viral</p>
+                <p class="hint">เปิดหน้า Trending ของ X แล้ว Extension จะสแกนให้อัตโนมัติ</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="tab-queue" class="tab-content">
+        <div class="section-header">
+            <h2>คิวสร้างคอนเทนต์</h2>
+            <div style="display: flex; gap: 8px;">
+                <button id="startQueueBtn" class="btn-small btn-primary"
+                    style="background:#10b981;">สร้างคอนเทนต์ตามคิว</button>
+                <button id="clearQueueBtn" class="btn-small btn-danger">ล้างคิว</button>
+            </div>
+        </div>
+        <div id="queueList" class="card-list">
+            <div class="empty-state">
+                <p>🗂️ ยังไม่มีรายการในคิว</p>
+                <p class="hint">ติ๊กเลือกจาก Found แล้วกด เข้าคิว AI</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Tab: Settings ===== -->
+    <section id="tab-settings" class="tab-content">
+        <div class="settings-form">
+            <div class="form-group">
+                <label>ยอด Views ขั้นต่ำ</label>
+                <div class="input-with-hint">
+                    <input type="number" id="minViews" value="500000" min="1000" step="10000">
+                    <span class="input-hint">เช่น 500000 = 500K</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>ความเร็วพิมพ์ (ms ต่อตัวอักษร)</label>
+                <div class="speed-inputs">
+                    <div>
+                        <span>Min:</span>
+                        <input type="number" id="typingSpeedMin" value="30" min="10" max="500">
+                    </div>
+                    <div>
+                        <span>Max:</span>
+                        <input type="number" id="typingSpeedMax" value="150" min="50" max="1000">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>หยุดพักทุกๆ (ตัวอักษร)</label>
+                <input type="number" id="pauseEveryChars" value="40" min="10" max="200">
+            </div>
+
+            <div class="form-group">
+                <label>ระยะเวลาพัก (ms)</label>
+                <div class="speed-inputs">
+                    <div>
+                        <span>Min:</span>
+                        <input type="number" id="pauseMin" value="300" min="100" max="3000">
+                    </div>
+                    <div>
+                        <span>Max:</span>
+                        <input type="number" id="pauseMax" value="800" min="200" max="5000">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Prompt Template</label>
+                <textarea id="promptTemplate" rows="10"
+                    placeholder="ใส่ Prompt ที่ต้องการ...ใช้ {CONTENT} เป็นตัวแทนเนื้อหาต้นทาง"></textarea>
+                <span class="input-hint">ระบบจะบังคับให้ข้อความสุดท้ายรวมลิงก์สินค้าแล้วไม่เกิน 280 ตัวอักษร</span>
+            </div>
+
+            <div class="form-group">
+                <label>Scroll Preset</label>
+                <select id="scrollPreset">
+                    <option value="slow">Slow</option>
+                    <option value="medium">Medium</option>
+                    <option value="fast">Fast</option>
+                </select>
+            </div>
+
+            <div class="form-group checkbox-group">
+                <label><input type="checkbox" id="manualAssist"> เปิด Manual Assist Mode</label>
+                <span class="input-hint">เมื่อเปิดไว้ ระบบจะรอให้กด Step Scroll แทนการเลื่อนต่อเนื่อง</span>
+            </div>
+
+            <div class="form-group checkbox-group">
+                <label><input type="checkbox" id="pauseOnFound"> หยุดเมื่อเจอโพสต์ที่เข้าเงื่อนไข</label>
+            </div>
+
+            <div class="form-group">
+                <label>ระยะเวลา Auto Quote (สุ่มช่วงนาที)</label>
+                <div class="speed-inputs">
+                    <div>
+                        <span>Min (นาที):</span>
+                        <input type="number" id="autoQuoteMinMinutes" value="2" min="1" max="60">
+                    </div>
+                    <div>
+                        <span>Max (นาที):</span>
+                        <input type="number" id="autoQuoteMaxMinutes" value="5" min="2" max="120">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Checkpoint ทุกกี่ครั้งที่เลื่อน</label>
+                <input type="number" id="checkpointEverySteps" value="6" min="1" max="100">
+            </div>
+
+            <div class="form-group">
+                <label>Session Limit (จำนวนโพสต์ต่อรอบ)</label>
+                <input type="number" id="sessionLimit" value="15" min="1" max="500">
+            </div>
+
+            <div class="form-group">
+                <label>Daily Limit (จำนวนโพสต์ต่อวัน)</label>
+                <input type="number" id="dailyLimit" value="60" min="1" max="1000">
+            </div>
+
+            <button id="saveSettings" class="btn-primary">💾 บันทึก Settings</button>
+            <div id="settingsMsg" class="settings-msg hidden"></div>
+        </div>
+    </section>
+
+    <script src="sidepanel.js"></script>
+</body>
+
+</html>

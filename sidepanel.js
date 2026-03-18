@@ -1,0 +1,894 @@
+// =============================================
+// X Viral Repurpose - Side Panel Dashboard
+// =============================================
+// UI หลักสำหรับจัดการ Drafts, ดูโพสต์ Viral, และตั้งค่า
+// =============================================
+
+(function () {
+    'use strict';
+
+    // --- DOM References ---
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+
+    const statusBadge = $('#statusBadge');
+    const statusBar = $('#statusBar');
+    const statusText = $('#statusText');
+    const draftList = $('#draftList');
+    const foundList = $('#foundList');
+    const queueList = $('#queueList');
+    const draftCount = $('#draftCount');
+    const resultCount = $('#resultCount');
+    const foundCount = $('#foundCount');
+    const queueCount = $('#queueCount');
+    const btnAutoScout = $('#btnAutoScout');
+    const autoScoutQueryInput = $('#autoScoutQuery');
+    const contextProductInput = $('#contextProduct');
+    const productLinkInput = $('#productLink');
+    const openAffiliateProductOfferBtn = $('#openAffiliateProductOffer');
+    const btnScoutStep = $('#btnScoutStep');
+    const btnScoutResume = $('#btnScoutResume');
+    const openResultsPageLink = $('#openResultsPage');
+    const openLatestResultBtn = $('#openLatestResult');
+    const refreshTrendsBtn = $('#refreshTrends');
+    const trendsCountrySelect = $('#trendsCountry');
+    const toggleTrendsPanelBtn = $('#toggleTrendsPanel');
+    const trendListWrap = $('#trendListWrap');
+    const trendList = $('#trendList');
+    const resultsPreviewList = $('#resultsPreviewList');
+    const clearResultsBtn = $('#clearResultsBtn');
+    const progressQuery = $('#progressQuery');
+    const progressProduct = $('#progressProduct');
+    const progressPreset = $('#progressPreset');
+    const progressSteps = $('#progressSteps');
+    const progressFound = $('#progressFound');
+    const progressPauseReason = $('#progressPauseReason');
+    const HASHTAG_PREFIX = '#';
+    const AFFILIATE_PRODUCT_OFFER_URL = 'https://affiliate.shopee.co.th/offer/product_offer';
+
+    // =============================================
+    // Auto Scout State
+    // =============================================
+    let isAutoScout = false;
+    let autoScoutQuery = '';
+    let contextProduct = '';
+    let productLink = '';
+    let trendsCountry = 'TH';
+    let autoScoutProgress = null;
+    let isTrendsCollapsed = false;
+    let selectedViralIds = new Set();
+
+    sendMessage({ type: 'GET_AUTO_SCOUT_STATE' }).then(res => {
+        if (res?.success) {
+            isAutoScout = Boolean(res.data?.enabled);
+            autoScoutQuery = res.data?.query || '';
+            contextProduct = res.data?.product || '';
+            productLink = res.data?.productLink || '';
+            trendsCountry = res.data?.trendsCountry || 'TH';
+            autoScoutProgress = res.data?.progress || null;
+            if (autoScoutQueryInput) autoScoutQueryInput.value = normalizeHashtagQuery(autoScoutQuery);
+            if (contextProductInput) contextProductInput.value = contextProduct;
+            if (productLinkInput) productLinkInput.value = productLink;
+            if (trendsCountrySelect) trendsCountrySelect.value = trendsCountry;
+            updateAutoScoutBtn();
+            renderProgress(autoScoutProgress);
+        }
+    });
+
+    if (btnAutoScout) {
+        btnAutoScout.addEventListener('click', async () => {
+            const nextEnabled = !isAutoScout;
+            const query = normalizeHashtagQuery(autoScoutQueryInput?.value || '');
+            const product = contextProductInput?.value.trim() || '';
+            const link = productLinkInput?.value.trim() || '';
+
+            if (autoScoutQueryInput) autoScoutQueryInput.value = query;
+
+            if (nextEnabled && (!query || query === HASHTAG_PREFIX)) {
+                alert('กรอกคำค้นก่อนเปิด Auto Scout');
+                autoScoutQueryInput?.focus();
+                return;
+            }
+
+            isAutoScout = nextEnabled;
+            autoScoutQuery = query;
+            contextProduct = product;
+            productLink = link;
+            updateAutoScoutBtn();
+
+            const res = await sendMessage({
+                type: 'SET_AUTO_SCOUT_STATE',
+                data: { enabled: isAutoScout, query: autoScoutQuery, product: contextProduct, productLink }
+            });
+
+            if (!res?.success) {
+                isAutoScout = !isAutoScout;
+                updateAutoScoutBtn();
+            }
+        });
+    }
+
+    function updateAutoScoutBtn() {
+        if (!btnAutoScout) return;
+        if (isAutoScout) {
+            btnAutoScout.textContent = '🤖 Auto Scout: ON';
+            btnAutoScout.style.background = '#22c55e';
+        } else {
+            btnAutoScout.textContent = '🤖 Auto Scout: OFF';
+            btnAutoScout.style.background = '#4b5563';
+        }
+    }
+
+    const btnAutoQuote = $('#btnAutoQuote');
+    const autoQuoteStatus = $('#autoQuoteStatus');
+    let isAutoQuote = false;
+
+    if (btnAutoQuote) {
+        btnAutoQuote.addEventListener('click', async () => {
+            isAutoQuote = !isAutoQuote;
+            if (isAutoQuote) {
+                const res = await sendMessage({ type: 'START_AUTO_QUOTE' });
+                if (!res?.success) {
+                    isAutoQuote = false;
+                    alert(res?.error || 'ยังเริ่ม Auto Quote ไม่ได้');
+                    btnAutoQuote.textContent = '🚀 เริ่ม Auto Quote';
+                    btnAutoQuote.style.background = '#10b981';
+                    autoQuoteStatus.classList.add('hidden');
+                    return;
+                }
+
+                btnAutoQuote.textContent = '⏹️ หยุด Auto Quote';
+                btnAutoQuote.style.background = '#ef4444';
+                autoQuoteStatus.classList.remove('hidden');
+            } else {
+                btnAutoQuote.textContent = '🚀 เริ่ม Auto Quote';
+                btnAutoQuote.style.background = '#10b981';
+                autoQuoteStatus.classList.add('hidden');
+                await sendMessage({ type: 'STOP_AUTO_QUOTE' });
+            }
+        });
+    }
+
+    btnScoutStep?.addEventListener('click', async () => {
+        await sendMessage({ type: 'AUTO_SCOUT_STEP' });
+    });
+
+    btnScoutResume?.addEventListener('click', async () => {
+        await sendMessage({ type: 'AUTO_SCOUT_RESUME' });
+    });
+
+    openResultsPageLink?.addEventListener('click', (event) => {
+        event.preventDefault();
+        window.open(chrome.runtime.getURL('results.html'), '_blank');
+    });
+
+    openLatestResultBtn?.addEventListener('click', async () => {
+        const response = await sendMessage({ type: 'GET_LATEST_RESULT' });
+        const latest = response?.data;
+        const url = latest
+            ? chrome.runtime.getURL(`results.html?focus=${encodeURIComponent(latest.id)}`)
+            : chrome.runtime.getURL('results.html');
+        window.open(url, '_blank');
+    });
+
+    contextProductInput?.addEventListener('change', async () => {
+        contextProduct = contextProductInput.value.trim();
+        await sendMessage({ type: 'SET_CONTEXT_PRODUCT', data: contextProduct });
+    });
+
+    autoScoutQueryInput?.addEventListener('input', () => {
+        const normalized = normalizeHashtagQuery(autoScoutQueryInput.value);
+        if (autoScoutQueryInput.value !== normalized) {
+            autoScoutQueryInput.value = normalized;
+        }
+        autoScoutQuery = normalized;
+    });
+
+    autoScoutQueryInput?.addEventListener('focus', () => {
+        if (!autoScoutQueryInput.value.trim()) {
+            autoScoutQueryInput.value = HASHTAG_PREFIX;
+        }
+    });
+
+    productLinkInput?.addEventListener('change', async () => {
+        productLink = productLinkInput.value.trim();
+        await sendMessage({ type: 'SET_PRODUCT_LINK', data: productLink });
+    });
+
+    openAffiliateProductOfferBtn?.addEventListener('click', () => {
+        window.open(AFFILIATE_PRODUCT_OFFER_URL, '_blank');
+    });
+
+    toggleTrendsPanelBtn?.addEventListener('click', () => {
+        setTrendsCollapsed(!isTrendsCollapsed);
+    });
+
+    // =============================================
+    // 1) Tab Navigation
+    // =============================================
+    $$('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Deactivate all
+            $$('.tab').forEach(t => t.classList.remove('active'));
+            $$('.tab-content').forEach(c => c.classList.remove('active'));
+            // Activate selected
+            tab.classList.add('active');
+            const tabId = tab.getAttribute('data-tab');
+            $(`#tab-${tabId}`).classList.add('active');
+        });
+    });
+
+    // =============================================
+    // 2) Load Data on Open
+    // =============================================
+    loadDrafts();
+    loadResults();
+    loadViralPosts();
+    loadProcessQueue();
+    loadGoogleTrends();
+    loadSettings();
+
+    async function loadDrafts() {
+        const res = await sendMessage({ type: 'GET_DRAFTS' });
+        if (res?.success) renderDrafts(res.data);
+    }
+
+    async function loadViralPosts() {
+        const res = await sendMessage({ type: 'GET_VIRAL_POSTS' });
+        if (res?.success) renderViralPosts(res.data);
+    }
+
+    async function loadResults() {
+        const res = await sendMessage({ type: 'GET_RESULTS' });
+        if (res?.success) renderResultsPreview(res.data);
+    }
+
+    async function loadProcessQueue() {
+        const res = await sendMessage({ type: 'GET_PROCESS_QUEUE' });
+        if (res?.success) renderProcessQueue(res.data || []);
+    }
+
+    async function loadGoogleTrends() {
+        const res = await sendMessage({ type: 'GET_GOOGLE_TRENDS', data: { geo: trendsCountry } });
+        if (res?.success) renderGoogleTrends(res.data);
+    }
+
+    async function loadSettings() {
+        const res = await sendMessage({ type: 'GET_SETTINGS' });
+        if (res?.success && res.data) {
+            $('#minViews').value = res.data.minViews || 500000;
+            $('#typingSpeedMin').value = res.data.typingSpeedMin || 30;
+            $('#typingSpeedMax').value = res.data.typingSpeedMax || 150;
+            $('#pauseEveryChars').value = res.data.pauseEveryChars || 40;
+            $('#pauseMin').value = res.data.pauseMin || 300;
+            $('#pauseMax').value = res.data.pauseMax || 800;
+            $('#scrollPreset').value = res.data.scrollPreset || 'medium';
+            $('#manualAssist').checked = Boolean(res.data.manualAssist);
+            $('#pauseOnFound').checked = Boolean(res.data.pauseOnFound);
+            $('#checkpointEverySteps').value = res.data.checkpointEverySteps || 6;
+            $('#sessionLimit').value = res.data.sessionLimit || 15;
+            $('#dailyLimit').value = res.data.dailyLimit || 60;
+            $('#autoQuoteMinMinutes').value = res.data.autoQuoteMinMinutes || 2;
+            $('#autoQuoteMaxMinutes').value = res.data.autoQuoteMaxMinutes || 5;
+            $('#promptTemplate').value = res.data.promptTemplate || '';
+        }
+    }
+
+    // =============================================
+    // 3) Render Drafts
+    // =============================================
+    function renderDrafts(drafts) {
+        draftCount.textContent = drafts.length;
+
+        if (drafts.length === 0) {
+            draftList.innerHTML = `
+        <div class="empty-state">
+          <p>📭 ยังไม่มี Draft</p>
+          <p class="hint">กดปุ่ม "🔥 AI Create Post" บนโพสต์ Viral เพื่อเริ่มสร้าง</p>
+        </div>`;
+            return;
+        }
+
+        draftList.innerHTML = drafts.map(draft => `
+      <div class="card draft-card" data-id="${escapeAttr(draft.id)}">
+        <div class="card-meta">
+                    <span class="card-badge ${draft.status === 'ready' ? 'badge-ready' : 'badge-posted'}">
+                        ${draft.status === 'ready' ? '✏️ พร้อมโพสต์' : '📤 รอโพสต์'}
+                    </span>
+                    <div class="card-meta-right">
+                                                ${renderDraftReadinessBadge(draft)}
+                        <span class="char-count">${getCharCount(draft.finalText || draft.generatedText)} ตัว</span>
+                        <span class="card-time">${formatTime(draft.createdAt)}</span>
+                    </div>
+        </div>
+
+        ${draft.sourceUrl ? `<div class="card-source">📌 จาก: <a href="${escapeAttr(draft.sourceUrl)}" target="_blank">${escapeHtml(draft.sourceAuthor || 'โพสต์ต้นทาง')}</a></div>` : ''}
+
+        <div class="card-content draft-text" contenteditable="false">${escapeHtml(draft.finalText || draft.generatedText)}</div>
+
+        <div class="card-actions">
+          <button class="btn-action btn-post" data-action="post" data-id="${escapeAttr(draft.id)}" title="ส่งไปโพสต์บน X">
+            🚀 Post to X
+          </button>
+          <button class="btn-action btn-copy" data-action="copy" data-id="${escapeAttr(draft.id)}" title="คัดลอกข้อความ">
+            📋 Copy
+          </button>
+          <button class="btn-action btn-edit" data-action="edit" data-id="${escapeAttr(draft.id)}" title="แก้ไข">
+            ✏️ Edit
+          </button>
+          <button class="btn-action btn-delete" data-action="delete" data-id="${escapeAttr(draft.id)}" title="ลบ">
+            🗑️
+          </button>
+        </div>
+      </div>
+    `).join('');
+
+        // Attach event listeners
+        draftList.querySelectorAll('[data-action]').forEach(btn => {
+            btn.addEventListener('click', handleDraftAction);
+        });
+    }
+
+    // =============================================
+    // 4) Draft Actions
+    // =============================================
+    async function handleDraftAction(e) {
+        const action = e.currentTarget.getAttribute('data-action');
+        const id = e.currentTarget.getAttribute('data-id');
+        const card = e.currentTarget.closest('.card');
+
+        switch (action) {
+            case 'post': {
+                e.currentTarget.disabled = true;
+                e.currentTarget.textContent = '⏳ กำลังส่ง...';
+                await sendMessage({ type: 'POST_TO_X', data: { id } });
+                e.currentTarget.textContent = '✅ ส่งแล้ว!';
+                e.currentTarget.classList.add('btn-success');
+                break;
+            }
+
+            case 'copy': {
+                const textEl = card.querySelector('.draft-text');
+                const text = textEl.textContent.trim();
+                await navigator.clipboard.writeText(text);
+                e.currentTarget.textContent = '✅ Copied!';
+                setTimeout(() => { e.currentTarget.textContent = '📋 Copy'; }, 2000);
+                break;
+            }
+
+            case 'edit': {
+                const textEl = card.querySelector('.draft-text');
+                const isEditing = textEl.getAttribute('contenteditable') === 'true';
+
+                if (isEditing) {
+                    // บันทึก
+                    textEl.setAttribute('contenteditable', 'false');
+                    textEl.classList.remove('editing');
+                    textEl.oninput = null;
+                    e.currentTarget.textContent = '✏️ Edit';
+                    const nextText = textEl.textContent.trim();
+                    updateCardCharCount(card, nextText);
+                    await sendMessage({
+                        type: 'UPDATE_DRAFT',
+                        data: { id, generatedText: nextText, finalText: nextText }
+                    });
+                } else {
+                    // เปิดแก้ไข
+                    textEl.setAttribute('contenteditable', 'true');
+                    textEl.classList.add('editing');
+                    textEl.focus();
+                    e.currentTarget.textContent = '💾 Save';
+                    textEl.oninput = onDraftTextInput;
+                }
+                break;
+            }
+
+            case 'delete': {
+                if (confirm('ลบ Draft นี้?')) {
+                    await sendMessage({ type: 'DELETE_DRAFT', data: { id } });
+                    card.style.opacity = '0';
+                    card.style.transform = 'translateX(100%)';
+                    setTimeout(() => {
+                        card.remove();
+                        // อัปเดต count
+                        const remaining = draftList.querySelectorAll('.card').length;
+                        draftCount.textContent = remaining;
+                        if (remaining === 0) {
+                            draftList.innerHTML = `
+                <div class="empty-state">
+                  <p>📭 ยังไม่มี Draft</p>
+                  <p class="hint">กดปุ่ม "🔥 AI Create Post" บนโพสต์ Viral เพื่อเริ่มสร้าง</p>
+                </div>`;
+                        }
+                    }, 300);
+                }
+                break;
+            }
+        }
+    }
+
+    // =============================================
+    // 5) Render Viral Posts
+    // =============================================
+    function renderViralPosts(posts) {
+        foundCount.textContent = posts.length;
+
+        if (posts.length === 0) {
+            foundList.innerHTML = `
+        <div class="empty-state">
+          <p>🔍 ยังไม่พบโพสต์ Viral</p>
+          <p class="hint">เปิดหน้า Trending ของ X แล้ว Extension จะสแกนให้อัตโนมัติ</p>
+        </div>`;
+            return;
+        }
+
+        foundList.innerHTML = posts.map(post => `
+      <div class="card found-card">
+        <div class="card-meta" style="display:flex; justify-content:space-between; width:100%;">
+          <div>
+                        <input type="checkbox" class="viral-checkbox" data-post-id="${escapeAttr(post.id)}" ${selectedViralIds.has(post.id) ? 'checked' : ''} style="cursor:pointer;" />
+            <span class="card-badge badge-viral">🔥 ${escapeHtml(post.viewCountText)} views</span>
+          </div>
+          <span class="card-time">${formatTime(post.capturedAt)}</span>
+        </div>
+        <div class="card-author" style="margin-top: 4px;">@${escapeHtml(post.author)}</div>
+        <div class="card-content">${escapeHtml(truncate(post.text, 200))}</div>
+        <div class="card-actions">
+          <button class="btn-action btn-process" data-post='${escapeAttr(JSON.stringify(post))}'>
+            🔥 สร้างคอนเทนต์
+          </button>
+          ${post.url ? `<a class="btn-action btn-link" href="${escapeAttr(post.url)}" target="_blank">🔗 ดูโพสต์ต้นฉบับ</a>` : ''}
+        </div>
+      </div>
+    `).join('');
+
+        const updateBatchCount = () => {
+            const checked = foundList.querySelectorAll('.viral-checkbox:checked').length;
+            const batchBtn = $('#batchCount');
+            if (batchBtn) batchBtn.textContent = checked;
+        };
+
+        // Attach Process checkbox sync
+        foundList.querySelectorAll('.viral-checkbox').forEach(chk => {
+            chk.addEventListener('change', () => {
+                const postId = chk.getAttribute('data-post-id');
+                if (chk.checked) selectedViralIds.add(postId);
+                else selectedViralIds.delete(postId);
+                updateBatchCount();
+            });
+        });
+        updateBatchCount();
+
+        // Attach process buttons
+        foundList.querySelectorAll('.btn-process').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const post = JSON.parse(e.currentTarget.getAttribute('data-post'));
+                e.currentTarget.disabled = true;
+                e.currentTarget.textContent = '⏳ กำลังเข้าคิว...';
+                await sendMessage({ type: 'PROCESS_WITH_AI', data: post });
+                e.currentTarget.textContent = '✅ ส่งแล้ว!';
+            });
+        });
+    }
+
+    function renderProcessQueue(posts) {
+        queueCount.textContent = posts.length;
+
+        if (!posts.length) {
+            queueList.innerHTML = `
+                <div class="empty-state">
+                    <p>🗂️ ยังไม่มีรายการในคิว</p>
+                    <p class="hint">ติ๊กเลือกจาก Found แล้วกด เข้าคิว AI</p>
+                </div>`;
+            return;
+        }
+
+        queueList.innerHTML = posts.map(post => `
+            <div class="card">
+                <div class="card-meta">
+                    <span class="card-badge badge-viral">🔥 ${escapeHtml(post.viewCountText || '')}</span>
+                    <div class="card-meta-right">
+                        <span class="char-count queue-status-${escapeAttr(post.queueStatus || 'queued')}">${escapeHtml(getQueueStatusLabel(post.queueStatus, post.queueError))}</span>
+                        <span class="card-time">${formatTime(post.queueUpdatedAt || post.capturedAt)}</span>
+                    </div>
+                </div>
+                <div class="card-author">@${escapeHtml(post.author || '')}</div>
+                <div class="card-content">${escapeHtml(truncate(post.text || '', 180))}</div>
+                <div class="card-actions">
+                    <button class="btn-action queue-remove" data-id="${escapeAttr(post.id)}">ลบออกจากคิว</button>
+                    ${post.url ? `<a class="btn-action btn-link" href="${escapeAttr(post.url)}" target="_blank">🔗 ต้นฉบับ</a>` : ''}
+                </div>
+            </div>`).join('');
+
+        queueList.querySelectorAll('.queue-remove').forEach(button => {
+            button.addEventListener('click', async () => {
+                await sendMessage({ type: 'REMOVE_FROM_PROCESS_QUEUE', data: { id: button.getAttribute('data-id') } });
+                loadProcessQueue();
+            });
+        });
+    }
+
+    function getQueueStatusLabel(status, error) {
+        switch (status) {
+            case 'processing':
+                return 'กำลังดำเนินการ';
+            case 'done':
+                return 'เสร็จแล้ว';
+            case 'error':
+                return error ? `ผิดพลาด` : 'ผิดพลาด';
+            default:
+                return 'รอดำเนินการ';
+        }
+    }
+
+    function renderResultsPreview(results) {
+        resultCount.textContent = results.length;
+
+        if (!results.length) {
+            resultsPreviewList.innerHTML = `
+                <div class="empty-state">
+                    <p>📚 ยังไม่มี Results</p>
+                    <p class="hint">เมื่อ AI สร้างเสร็จ ผลลัพธ์จะถูกเก็บไว้ที่นี่</p>
+                </div>`;
+            return;
+        }
+
+        resultsPreviewList.innerHTML = results.slice(0, 12).map(item => `
+            <div class="card">
+                <div class="card-meta">
+                    <span class="card-badge badge-ready">${item.copied ? 'Copied' : 'Saved'}</span>
+                    <div class="card-meta-right">
+                        <span class="char-count">${getCharCount(item.finalText || item.generatedText)} ตัว</span>
+                        <span class="card-time">${formatTime(item.createdAt)}</span>
+                    </div>
+                </div>
+                <div class="card-content result-preview-text">${escapeHtml(truncate(item.finalText || item.generatedText, 220))}</div>
+                <div class="card-actions">
+                    <button class="btn-action result-copy">📋 Copy</button>
+                    ${item.sourceUrl ? `<a class="btn-action btn-link" href="${escapeAttr(item.sourceUrl)}" target="_blank">🔗 ต้นทาง</a>` : ''}
+                </div>
+            </div>`).join('');
+
+        resultsPreviewList.querySelectorAll('.result-copy').forEach(button => {
+            button.addEventListener('click', async () => {
+                const text = button.closest('.card')?.querySelector('.result-preview-text')?.textContent?.trim() || '';
+                await navigator.clipboard.writeText(text);
+                button.textContent = '✅ Copied';
+            });
+        });
+    }
+
+    function renderGoogleTrends(trends) {
+        if (!trends || !trends.length) {
+            trendList.innerHTML = `
+                <div class="empty-state">
+                    <p>📈 ยังดึง Google Trends ไม่ได้</p>
+                </div>`;
+            return;
+        }
+
+        trendList.innerHTML = trends.map(item => `
+            <div class="card">
+                <div class="trend-item">
+                    <strong>${escapeHtml(item.query)}</strong>
+                    <button class="btn-action trend-use" data-query="${escapeAttr(item.query)}">ใช้คำนี้</button>
+                </div>
+            </div>`).join('');
+
+        trendList.querySelectorAll('.trend-use').forEach(button => {
+            button.addEventListener('click', () => {
+                const query = button.getAttribute('data-query') || '';
+                const normalizedQuery = normalizeHashtagQuery(query);
+                autoScoutQueryInput.value = normalizedQuery;
+                autoScoutQuery = normalizedQuery;
+            });
+        });
+    }
+
+    // =============================================
+    // 6) Settings
+    // =============================================
+    $('#saveSettings').addEventListener('click', async () => {
+        const settings = {
+            minViews: parseInt($('#minViews').value) || 500000,
+            typingSpeedMin: parseInt($('#typingSpeedMin').value) || 30,
+            typingSpeedMax: parseInt($('#typingSpeedMax').value) || 150,
+            pauseEveryChars: parseInt($('#pauseEveryChars').value) || 40,
+            pauseMin: parseInt($('#pauseMin').value) || 300,
+            pauseMax: parseInt($('#pauseMax').value) || 800,
+            scrollPreset: $('#scrollPreset').value,
+            manualAssist: $('#manualAssist').checked,
+            pauseOnFound: $('#pauseOnFound').checked,
+            checkpointEverySteps: parseInt($('#checkpointEverySteps').value) || 6,
+            sessionLimit: parseInt($('#sessionLimit').value) || 15,
+            dailyLimit: parseInt($('#dailyLimit').value) || 60,
+            autoQuoteMinMinutes: parseInt($('#autoQuoteMinMinutes').value) || 2,
+            autoQuoteMaxMinutes: parseInt($('#autoQuoteMaxMinutes').value) || 5,
+            promptTemplate: $('#promptTemplate').value
+        };
+
+        const res = await sendMessage({ type: 'SAVE_SETTINGS', data: settings });
+        const msg = $('#settingsMsg');
+        msg.classList.remove('hidden');
+
+        if (res?.success) {
+            msg.textContent = '✅ บันทึกเรียบร้อย!';
+            msg.className = 'settings-msg msg-success';
+        } else {
+            msg.textContent = '❌ บันทึกไม่สำเร็จ';
+            msg.className = 'settings-msg msg-error';
+        }
+
+        setTimeout(() => msg.classList.add('hidden'), 3000);
+    });
+
+    // =============================================
+    // 7) Action Buttons
+    // =============================================
+
+    // Batch Create AI
+    $('#batchCreateAiBtn')?.addEventListener('click', async () => {
+        const selectedIds = Array.from(selectedViralIds);
+        if (selectedIds.length === 0) {
+            alert('กรุณาติ๊กเลือกโพสต์ที่ต้องการอย่างน้อย 1 โพสต์');
+            return;
+        }
+
+        const { data: posts } = await sendMessage({ type: 'GET_VIRAL_POSTS' });
+        if (!posts) return;
+
+        const postsToProcess = posts.filter(p => selectedIds.includes(p.id));
+
+        await sendMessage({ type: 'ADD_TO_PROCESS_QUEUE', data: postsToProcess });
+
+        selectedViralIds = new Set();
+        foundList.querySelectorAll('.viral-checkbox').forEach(chk => {
+            chk.checked = false;
+        });
+        const batchBtn = $('#batchCount');
+        if (batchBtn) batchBtn.textContent = '0';
+
+        await loadProcessQueue();
+        $$('.tab').forEach(t => t.classList.remove('active'));
+        $$('.tab-content').forEach(c => c.classList.remove('active'));
+        $('[data-tab="queue"]').classList.add('active');
+        $('#tab-queue').classList.add('active');
+
+    });
+
+    $('#startQueueBtn')?.addEventListener('click', async () => {
+        const res = await sendMessage({ type: 'START_PROCESS_QUEUE' });
+        if (!res?.success) {
+            statusText.textContent = res?.error || 'เริ่มคิวไม่สำเร็จ';
+            statusBar.classList.remove('hidden');
+            return;
+        }
+
+        await loadProcessQueue();
+    });
+
+    $('#clearQueueBtn')?.addEventListener('click', async () => {
+        if (!confirm('ล้างรายการในคิวทั้งหมด?')) return;
+        await sendMessage({ type: 'CLEAR_PROCESS_QUEUE' });
+        await loadProcessQueue();
+    });
+
+    $('#clearDrafts').addEventListener('click', async () => {
+        if (confirm('ลบ Draft ทั้งหมด?')) {
+            await sendMessage({ type: 'CLEAR_ALL_DRAFTS' });
+            loadDrafts();
+        }
+    });
+
+    $('#clearFound').addEventListener('click', async () => {
+        if (confirm('ลบโพสต์ Viral ที่พบทั้งหมด?')) {
+            await sendMessage({ type: 'CLEAR_ALL_VIRAL' });
+            loadViralPosts();
+        }
+    });
+
+    clearResultsBtn?.addEventListener('click', async () => {
+        if (confirm('ลบ Results ทั้งหมด?')) {
+            await sendMessage({ type: 'CLEAR_RESULTS' });
+            loadResults();
+        }
+    });
+
+    refreshTrendsBtn?.addEventListener('click', async () => {
+        refreshTrendsBtn.disabled = true;
+        refreshTrendsBtn.textContent = '...';
+        await loadGoogleTrends();
+        refreshTrendsBtn.disabled = false;
+        refreshTrendsBtn.textContent = '↻ รีเฟรช';
+    });
+
+    trendsCountrySelect?.addEventListener('change', async () => {
+        trendsCountry = trendsCountrySelect.value;
+        await sendMessage({ type: 'SET_TRENDS_COUNTRY', data: trendsCountry });
+        await loadGoogleTrends();
+    });
+
+    // =============================================
+    // 8) Real-time Status Updates (จาก background)
+    // =============================================
+    chrome.runtime.onMessage.addListener((message) => {
+        if (message.type === 'STATUS_UPDATE') {
+            updateStatusUI(message.data);
+        }
+    });
+
+    function updateStatusUI(data) {
+        const { status, message } = data;
+
+        statusText.textContent = message;
+
+        switch (status) {
+            case 'processing':
+                statusBadge.textContent = '⚡ Processing';
+                statusBadge.className = 'status-badge status-processing';
+                statusBar.classList.remove('hidden');
+                break;
+
+            case 'found':
+                statusBadge.textContent = '🔍 Found!';
+                statusBadge.className = 'status-badge status-found';
+                loadViralPosts();
+                break;
+
+            case 'done':
+                statusBadge.textContent = '✅ Done';
+                statusBadge.className = 'status-badge status-done';
+                statusBar.classList.add('hidden');
+                loadDrafts();
+                // สลับไป tab drafts อัตโนมัติ
+                $$('.tab').forEach(t => t.classList.remove('active'));
+                $$('.tab-content').forEach(c => c.classList.remove('active'));
+                $('[data-tab="drafts"]').classList.add('active');
+                $('#tab-drafts').classList.add('active');
+                // Reset status badge หลัง 5 วินาที
+                setTimeout(() => {
+                    statusBadge.textContent = 'Idle';
+                    statusBadge.className = 'status-badge status-idle';
+                }, 5000);
+                break;
+
+            case 'error':
+                statusBadge.textContent = '❌ Error';
+                statusBadge.className = 'status-badge status-error';
+                statusBar.classList.remove('hidden');
+                setTimeout(() => statusBar.classList.add('hidden'), 8000);
+                break;
+        }
+    }
+
+    // =============================================
+    // 9) Auto-refresh ด้วย Storage Change Listener
+    // =============================================
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        if (changes.drafts) loadDrafts();
+        if (changes.results) loadResults();
+        if (changes.viralPosts) loadViralPosts();
+        if (changes.processQueue) loadProcessQueue();
+        if (changes.trendsCountry) {
+            trendsCountry = changes.trendsCountry.newValue || 'TH';
+            if (trendsCountrySelect) {
+                trendsCountrySelect.value = trendsCountry;
+            }
+            loadGoogleTrends();
+        }
+        if (changes.autoScoutProgress) renderProgress(changes.autoScoutProgress.newValue);
+    });
+
+    function renderProgress(progress) {
+        const current = progress || {};
+        progressQuery.textContent = current.query || '-';
+        progressProduct.textContent = current.product || '-';
+        progressProduct.title = current.productLink || '';
+        progressPreset.textContent = current.scrollPreset || 'medium';
+        progressSteps.textContent = String(current.steps || 0);
+        progressFound.textContent = String(current.foundThisSession || 0);
+        progressPauseReason.textContent = current.paused ? (current.pauseReason || 'พักอยู่') : (current.active ? 'กำลังทำงาน' : 'พร้อม');
+    }
+
+    function onDraftTextInput(event) {
+        const textEl = event.currentTarget;
+        const card = textEl.closest('.card');
+        updateCardCharCount(card, textEl.textContent.trim());
+    }
+
+    function updateCardCharCount(card, text) {
+        const chip = card?.querySelector('.char-count');
+        if (chip) {
+            chip.textContent = `${getCharCount(text)} ตัว`;
+        }
+
+        const readinessChip = card?.querySelector('.draft-readiness-badge');
+        if (readinessChip) {
+            const sourceUrl = card?.querySelector('.card-source a')?.getAttribute('href') || '';
+            const badge = getDraftReadiness(text, sourceUrl);
+            readinessChip.textContent = badge.label;
+            readinessChip.className = `draft-readiness-badge ${badge.className}`;
+        }
+    }
+
+    function getCharCount(text) {
+        return Array.from(text || '').length;
+    }
+
+    function setTrendsCollapsed(collapsed) {
+        isTrendsCollapsed = Boolean(collapsed);
+        trendListWrap?.classList.toggle('is-collapsed', isTrendsCollapsed);
+        trendListWrap?.classList.toggle('is-expanded', !isTrendsCollapsed);
+        if (toggleTrendsPanelBtn) {
+            toggleTrendsPanelBtn.textContent = isTrendsCollapsed ? 'ขยาย' : 'ย่อ';
+            toggleTrendsPanelBtn.setAttribute('aria-expanded', String(!isTrendsCollapsed));
+        }
+    }
+
+    function normalizeHashtagQuery(value) {
+        const cleaned = String(value || '').replace(/^#+\s*/, '').trimStart();
+        return `${HASHTAG_PREFIX}${cleaned}`;
+    }
+
+    function renderDraftReadinessBadge(draft) {
+        const badge = getDraftReadiness(draft.finalText || draft.generatedText || '', draft.sourceUrl || '');
+        return `<span class="draft-readiness-badge ${badge.className}">${badge.label}</span>`;
+    }
+
+    function getDraftReadiness(text, sourceUrl) {
+        const hasQuoteSource = Boolean(String(sourceUrl || '').trim());
+        const hasBullet = /^-\s+/m.test(String(text || ''));
+        const isExactLength = getCharCount(text) === 280;
+
+        if (hasQuoteSource && hasBullet && isExactLength) {
+            return { label: 'Quote-ready / 280 chars', className: 'badge-quote-ready' };
+        }
+
+        const missing = [];
+        if (!hasQuoteSource) missing.push('quote');
+        if (!hasBullet) missing.push('bullet');
+        if (!isExactLength) missing.push('280');
+        return { label: `ต้องเช็ก: ${missing.join(', ')}`, className: 'badge-quote-missing' };
+    }
+
+    // =============================================
+    // 10) Utilities
+    // =============================================
+    function sendMessage(msg) {
+        return new Promise(resolve => {
+            chrome.runtime.sendMessage(msg, resolve);
+        });
+    }
+
+    function formatTime(isoString) {
+        if (!isoString) return '';
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMin = Math.floor(diffMs / 60000);
+
+        if (diffMin < 1) return 'เมื่อกี้';
+        if (diffMin < 60) return `${diffMin} นาทีที่แล้ว`;
+        if (diffMin < 1440) return `${Math.floor(diffMin / 60)} ชม.ที่แล้ว`;
+        return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+    }
+
+    function truncate(text, maxLen) {
+        if (!text || text.length <= maxLen) return text || '';
+        return text.substring(0, maxLen) + '...';
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function escapeAttr(str) {
+        if (!str) return '';
+        return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+})();
