@@ -1,94 +1,384 @@
-# Implementation Plan: X Viral Content Repurpose Extension
+# Full Automate Home Plan
 
-## 1. ภาพรวมโปรเจกต์ (Project Overview)
-Chrome Extension สำหรับค้นหาโพสต์ Viral (500k+ views) บน X (Twitter) จากหน้า Trending แล้วนำเนื้อหาไปประมวลผลผ่าน x.ai โดยจำลองพฤติกรรมการพิมพ์ของมนุษย์ (เพื่อเลี่ยง Anti-bot) จากนั้นเก็บผลลัพธ์ที่ได้ไว้ในระบบ เพื่อให้ผู้ใช้งานนำไปกดโพสต์ด้วยตัวเอง (Manual Post) 
+## 1. เป้าหมายรอบนี้
+เปลี่ยนหน้าแรกของโปรแกรมจาก dashboard แบบแยกเครื่องมือ มาเป็นหน้า `Full Automate` ที่ใช้ตั้งงานเป็นชุดเดียวแล้วปล่อยระบบทำงานต่อเนื่องได้
 
-**จุดเด่นหลัก:**
-- **ไม่ใช้ API ข้ามระบบ:** ทำงานบนหน้าเว็บ x.ai โดยตรงด้วยเทคนิค Human-like Typing Simulation
-- **Half-Screen UI (Sidebar/Iframe):** แบ่งครึ่งหน้าจอ (หรือเปิดเป็น Side Panel ดึงหน้า x.ai มาแสดง) จะไม่มีการเด้งเปิด Tab ใหม่ให้เสียสมาธิ
-- **Prompt Structure:** บังคับโครงสร้าง หัวเปิด -> Bullet -> สรุป ด้วยภาษาพูดแบบเพื่อนสนิท
+สิ่งที่ต้องรองรับในรอบออกแบบนี้มี 3 ข้อหลัก:
 
----
+1. เพิ่มหัวข้อ, สินค้า, และลิงก์ได้หลายหัวข้อ
+2. กำหนดได้ว่าหัวข้อไหนจะหา/สร้างกี่โพสต์ และเลือกได้ว่าจะสลับหัวข้อ หรือทำหัวข้อเดียวให้ครบก่อน
+3. กำหนดลำดับการ Quote ได้ว่าจะเรียงทีละสินค้า หรือสลับสินค้า
 
-## 2. สถาปัตยกรรมระบบ (Architecture & UI)
+เอกสารนี้เป็นแผนก่อนลงมือเขียนโค้ด โดยยึดโครงสร้างจริงของโปรเจกต์ปัจจุบันที่มี `background.js`, `content_x.js`, `content_ai.js`, และ `sidepanel.*` เป็นแกนหลัก
 
-### 2.1 รูปแบบ Half-Screen UI
-จะใช้เทคนิค **Chrome Side Panel API** หรือ **Injected Iframe** (แนะนำ Iframe ฝังขวาของจอ)
-- **ฝั่งซ้าย (60%):** หน้าเว็บ X.com ปกติที่คุณกำลังเล่น
-- **ฝั่งขวา (40%):** แผงของ Extension ที่โหลดหน้าเว็บ `x.ai` ซ้อนไว้ด้านใน หรือเป็น UI ของ Extension เองที่ซ่อน Iframe ของ x.ai ไว้ทำงานเบื้องหลัง
-- *หมายเหตุ: การฝัง iframe ของ x.ai ต้องจัดการเรื่อง X-Frame-Options หาก x.ai บล็อก จะใช้ Chrome Side Panel API ดึงหน้า x.ai มาเปิดด้านข้างแทน*
+## 2. ปัญหาของหน้าแรกปัจจุบัน
+หน้าแรกใน side panel ตอนนี้ยังเป็นการวาง control หลายชิ้นต่อกัน เช่น query, product, product link, auto scout, tabs, queue, drafts และ auto quote
 
-### 2.2 โครงสร้างไฟล์
-- `manifest.json` (Manifest V3)
-- `content_script.js` (รันบน x.com เพื่อหาโพสต์ 500k+ และสร้างแผง UI)
-- `ai_script.js` (รันบน x.ai เพื่อจำลองคนพิมพ์ และดูดผลลัพธ์กลับ)
-- `background.js` (ตัวกลางสื่อสารข้อมูลระหว่าง x.com กับ x.ai และจัดการ Storage)
-- `popup.html / popup.js` (หน้าต่างจัดการคิวโพสต์ที่รอคนมากดยืนยัน)
-- `styles.css` (ตกแต่งปุ่มและ Half-screen UI)
+ข้อจำกัดของแนวทางเดิม:
 
----
+- รองรับบริบทสินค้าได้ครั้งละ 1 ชุดเป็นหลัก
+- queue มองเป็นรายการโพสต์ ไม่ได้มองเป็นแผนงานหลายหัวข้อ
+- ไม่มี orchestration rule ระดับ campaign ว่าจะสลับหัวข้อหรือไล่ทีละหัวข้อ
+- quote flow มองจาก draft ที่มีอยู่แล้ว แต่ยังไม่มี policy ชัดว่าให้กระจายสินค้าอย่างไร
+- หน้าแรกยังเหมาะกับ operator mode มากกว่า full automate mode
 
-## 3. Workflow การทำงาน (Step-by-Step)
+สรุปคือระบบมี automation engine อยู่แล้ว แต่ยังไม่มี `control plane` ที่จัดการงานหลายหัวข้อแบบครบวงจร
 
-### Step 1: ค้นหาและดักจับ (Scraping & Trigger)
-1. `content_script.js` เฝ้ามอง (Observe) หน้าจอตอนสอดส่องหน้า Trending
-2. หา Element ตัวเลข Views ถ้าเจอ `500K` หรือมากกว่า จะทำไฮไลต์โพสต์นั้น
-3. แทรกปุ่ม **"🔥 Create Post (AI)"** ติดไว้ที่โพสต์นั้น
-4. เมื่อผู้ใช้กดปุ่ม ระบบจะ Copy ข้อความต้นทาง (Context)
+## 3. เป้าหมาย UX ใหม่
+หน้าแรกใหม่จะต้องเป็น `Campaign Builder + Run Control` ไม่ใช่แค่แผงตั้งค่า
 
-### Step 2: ประมวลผลแบบเนียนขั้นสุด (Human-like AI Prompting)
-1. เมื่อกดปุ่ม Half-Screen ของ `x.ai` จะสไลด์เปิดออกมาด้านข้าง
-2. โค้ดจะส่งค่าข้อความผ่าน `Message Passing` ไปยัง `ai_script.js` ที่ฝังอยู่ในครึ่งจอของ `x.ai`
-3. **Typing Simulation:** `ai_script.js` เริ่มโฟกัสที่ช่อง Input ของ x.ai แล้วทำพฤติกรรม:
-   - พิมพ์ทีละตัวอักษร ด้วยการสุ่ม Delay (หน่วงเวลา 30-150ms ต่อตัวอักษร)
-   - มีการหยุดพักหายใจ (Pause) ทุกๆ 30-50 ตัวอักษร
-   - ยิง Event: `keydown`, `input`, `keyup` ให้ครบถ้วนเพื่อไม่ให้ระบบจับได้ว่าเป็น Script วางข้อความ
-4. **Prompt Template ที่จะพิมพ์:**
-   ```text
-   กำหนดบทบาท: คุณคือวัยรุ่นที่ชอบเล่นทวิตเตอร์ ให้สรุปเนื้อหาด้านล่างนี้ โดยใช้ภาษาพูดเหมือนเพื่อนเล่าเรื่องให้เพื่อนฟัง ห้ามใช้ภาษาทางการเด็ดขาด 
-   และต้องบังคับโครงสร้าง 3 ส่วนดังนี้:
-   1. หัวเปิดเรื่องให้น่าสนใจ
-   2. โครงสร้างเนื้อหาหลักเป็น Bullet (-) สั้นๆ กระชับ เข้าใจง่าย
-   3. สรุปทิ้งท้ายที่เกี่ยวโยงกับโพสต์ต้นทาง
+ภาพใช้งานที่ต้องได้:
 
-   เนื้อหาต้นทาง: [วางเนื้อหาที่ดูดมาจาก 500k views]
-   ```
-5. จำลองการกดปุ่ม Enter (Send) สุ่ม delay 500-1000ms
+1. ผู้ใช้เปิดหน้าแรก
+2. สร้างหลายหัวข้อในหน้าเดียว
+3. แต่ละหัวข้อใส่สินค้าและลิงก์ของตัวเองได้
+4. ระบุจำนวนโพสต์เป้าหมายต่อหัวข้อ
+5. เลือก policy การรันของทั้ง campaign
+6. กดเริ่ม แล้วระบบคิวหาโพสต์, ส่ง AI, สร้าง draft, และจัด quote ตาม policy ที่เลือก
+7. ผู้ใช้เห็นสถานะรวมแบบ campaign และสถานะย่อยแบบต่อหัวข้อ
 
-### Step 3: การรวบรวมข้อมูล (Extract & Store)
-1. `ai_script.js` เฝ้ารอจนกว่า x.ai จะ generate ข้อความเสร็จ (สังเกตจากปุ่ม Stop Gen หายไป หรือมีปุ่ม Copy โผล่มา)
-2. ดูดข้อความ Response สุดท้ายที่ AI ตอบกลับมา
-3. ส่งข้อมูลกลับไปที่ `background.js` เพื่อเซฟลง `chrome.storage.local` เป็น "Draft (ร่าง)"
-4. ปิดหรือซ่อนหน้าต่าง Half-screen
+## 4. แนวคิดข้อมูลหลัก
+แนะนำให้เพิ่มโมเดลข้อมูลระดับ `campaign` และ `topic` แยกจาก queue เดิม
 
-### Step 4: การโพสต์โดยมนุษย์ (Manual Review & Post)
-1. ในเวลาที่ผู้ใช้ต้องการ ผู้ใช้กดเปิด Extension Popup (หรือหน้า Dashboard)
-2. แถบ UI จะแสดงรายการ "ข้อความที่ AI เตรียมไว้ให้" ทั้งหมด
-3. ผู้ใช้กดอ่าน และสามารถ Edit แก้ไขได้
-4. กดปุ่ม `Post to X` -> Extension จะสลับหน้าจอไปที่กล่องตั้่งโพสต์ของ X แล้วพิมพ์/วาง ข้อความนั้นให้
-5. **ผู้ใช้กดปุ่ม "Post" ด้วยตัวเอง** เป็นอันจบกระบวนการปลอดภัย 100%
+### 4.1 Campaign
+campaign คือชุดงาน full automate 1 รอบ
 
----
+ข้อมูลหลักที่ควรมี:
 
-## 4. แผนการพัฒนา (Development Phases)
+- `id`
+- `name`
+- `status` เช่น `draft`, `running`, `paused`, `completed`, `error`
+- `topicExecutionMode`
+- `quoteDistributionMode`
+- `createdAt`
+- `updatedAt`
+- `startedAt`
+- `completedAt`
+- `activeTopicIndex` หรือ pointer สำหรับ policy ที่ต้องสลับหัวข้อ
 
-- **Phase 1: Project Setup & Half-screen UI (25%)**
-  - ตั้งค่า Manifest V3 
-  - สร้างระบบแบ่งหน้าจอซ้าย-ขวา หรือ Side panel สำหรับ x.com และ x.ai
+### 4.2 Topic Item
+แต่ละหัวข้อคือหน่วยย่อยใน campaign
 
-- **Phase 2: X.com Parser (50%)**
-  - เขียน Logic หากล่อง Tweet และตัวเลขยอด View
-  - ฝังปุ่ม Custom UI บนหน้าเว็บ
+ข้อมูลหลักที่ควรมี:
 
-- **Phase 3: Human-like Typing Engine (75%)**
-  - พัฒนาอัลกอริทึมการพิมพ์จำลองมนุษย์
-  - นำ Prompt เข้าไปสั่งงาน x.ai โดยไม่พึ่ง API รอดูกลไก Anti-bot ของหน้าเว็บ
+- `id`
+- `topic`
+- `productName`
+- `productLink`
+- `targetPostCount`
+- `generatedCount`
+- `quotedCount`
+- `status` เช่น `pending`, `running`, `completed`, `error`
+- `lastProcessedAt`
+- `lastSourceUrl`
+- `notes` หรือ `errorMessage`
 
-- **Phase 4: Output Extraction & Dashboard (100%)**
-  - ดึงข้อมูลจาก x.ai ที่สร้างเสร็จ
-  - สร้างหน้า UI สำหรับพักข้อมูล (Draft Queue)
-  - สร้างปุ่มโยนข้อความกลับไปที่ช่อง Post ของ X
+### 4.3 Execution Queue
+นอกจาก `processQueue` เดิม ควรมีคิวระดับ orchestration ที่บอกว่า next action คืออะไร
 
-## 5. ความเสี่ยงและวิธีรับมือ (Risks & Mitigations)
-1. **DOM Structure Changes:** ทั้ง X และ x.ai มีการเปลี่ยนชื่อ Class บ่อย ต้องใช้ CSS Selectors ที่ยืดหยุ่น เช่น การหาจาก `aria-label` หรือโครงสร้าง HTML ร่วมกับการใช้ MutationObserver
-2. **Iframe Blocking:** หาก x.ai บล็อก iframe (`X-Frame-Options: DENY`) เราจะเปลี่ยนไปใช้ **Chrome Side Panel API** ซึ่งได้รับอนุญาตจาก Browser โดยตรง เปิดแผงด้านขวาเนียนๆ ได้เหมือนกัน
+ตัวอย่าง action:
+
+- `find-source-posts`
+- `generate-draft`
+- `enqueue-quote`
+- `publish-quote`
+
+ถ้าไม่แยกระดับนี้ หน้าแรกใหม่จะมี UI สวยขึ้นแต่ behavior ภายในยังผูกติดกับ queue เดิมมากเกินไป
+
+## 5. โครงสร้างหน้าแรกใหม่
+หน้าแรกควรมี 4 ส่วนหลักในหน้าเดียว
+
+### 5.1 Campaign Header
+แสดงข้อมูลระดับภาพรวม
+
+- ชื่อ campaign
+- สถานะ campaign
+- จำนวนหัวข้อทั้งหมด
+- เป้าหมายรวมทั้งหมด
+- ทำไปแล้วกี่โพสต์
+- ปุ่ม `เริ่ม`, `พัก`, `ทำต่อ`, `หยุด`
+
+### 5.2 Topic Builder
+เป็นส่วนสำคัญที่สุดของหน้าแรกใหม่
+
+ต่อ 1 แถวหัวข้อควรมี field ดังนี้:
+
+- `หัวข้อ`
+- `สินค้า`
+- `ลิงก์`
+- `จำนวนโพสต์เป้าหมาย`
+- สถานะปัจจุบัน
+- ปุ่มลบแถว
+
+ต้องมีความสามารถ:
+
+- เพิ่มแถวหัวข้อได้หลายรายการ
+- reorder หัวข้อขึ้น/ลงได้
+- duplicate หัวข้อได้ เผื่อใช้สินค้าเดิมแต่เปลี่ยน target count
+- validate ว่าหัวข้อว่างไม่ได้ และถ้าใส่ลิงก์ต้องเป็น URL ที่ถูกต้อง
+
+### 5.3 Automation Rules
+เป็นส่วนกำหนด policy ของทั้ง campaign
+
+ต้องมีอย่างน้อย 2 กลุ่ม rule:
+
+#### A. Topic Execution Mode
+กำหนดว่าระบบจะวิ่งหัวข้ออย่างไร
+
+ตัวเลือกที่ต้องรองรับ:
+
+- `round-robin`: สลับหัวข้อไปทีละโพสต์ เช่น A1 -> B1 -> C1 -> A2
+- `drain-topic`: ทำหัวข้อเดียวให้ครบก่อน เช่น A1 -> A2 -> A3 -> B1
+
+#### B. Quote Distribution Mode
+กำหนดว่าตอนเอา draft ไป quote จะจัดลำดับสินค้าอย่างไร
+
+ตัวเลือกที่ต้องรองรับ:
+
+- `sequential-by-product`: เรียงทีละสินค้าจนหมดก่อน
+- `alternate-products`: สลับสินค้า/หัวข้อเพื่อลดการติด pattern เดิม
+
+### 5.4 Runtime Monitor
+ส่วนแสดงผลการทำงานจริงแบบ live
+
+- ตอนนี้กำลังรันหัวข้ออะไร
+- คิวถัดไปคืออะไร
+- หัวข้อไหนเหลืออีกกี่โพสต์
+- draft ที่สร้างแล้วต่อหัวข้อ
+- quote ที่สำเร็จแล้วต่อหัวข้อ
+- error ล่าสุด
+
+## 6. กติกาการทำงานที่ต้องนิยามให้ชัด
+
+### 6.1 การเพิ่มหลายหัวข้อ
+หนึ่งหัวข้อผูกกับสินค้า 1 ชุดเพื่อให้ prompt และ quote context ชัดเจน
+
+ข้อเสนอ:
+
+- 1 แถว = 1 หัวข้อ + 1 สินค้า + 1 ลิงก์
+- ถ้าผู้ใช้ต้องการหัวข้อเดียวแต่หลายสินค้า ให้เพิ่มหลายแถวโดยใช้หัวข้อซ้ำได้
+
+เหตุผล:
+
+- data model ตรงกว่า
+- prompt builder ง่ายกว่า
+- quote distribution คุมได้ง่ายกว่า
+
+### 6.2 การกำหนดจำนวนโพสต์ต่อหัวข้อ
+แต่ละหัวข้อต้องมี `targetPostCount`
+
+กติกาแนะนำ:
+
+- ค่าต่ำสุดคือ 1
+- ถ้าครบ target แล้ว topic เปลี่ยนเป็น `completed`
+- ถ้าแหล่งโพสต์ไม่พอ ให้ค้างที่ `waiting-source` หรือ `partial`
+
+### 6.3 การสลับหัวข้อหรือทำหัวข้อเดียวให้หมดก่อน
+นี่คือ business rule หลักของ campaign
+
+นิยามชัดเจน:
+
+- `round-robin`: เลือกหัวข้อถัดไปที่ยังไม่ครบ target และไม่ติด error
+- `drain-topic`: เลือกหัวข้อเดิมซ้ำไปเรื่อย ๆ จนกว่าจะครบ target หรือหา source ไม่ได้
+
+ต้องกัน edge case:
+
+- หัวข้อหนึ่ง error ไม่ควรทำให้ campaign ทั้งก้อนหยุด ถ้าเลือกได้ควรข้ามไปหัวข้อถัดไป
+- ถ้าทุกหัวข้อ error หรือครบหมดแล้ว campaign จึงค่อยปิดรอบ
+
+### 6.4 การจัด Quote แบบเรียงทีละสินค้า หรือสลับกัน
+ต้องแยกจากกติกาการ generate draft เพราะบางกรณีผู้ใช้ต้องการ generate แบบสลับหัวข้อ แต่ quote แบบเรียงสินค้า
+
+นิยามชัดเจน:
+
+- `sequential-by-product`: quote งานของสินค้า/หัวข้อเดียวกันให้ครบก่อน แล้วค่อยย้ายไปหัวข้อถัดไป
+- `alternate-products`: quote แบบวนลูปข้ามหัวข้อ เช่น A quote 1 -> B quote 1 -> C quote 1
+
+ผลดี:
+
+- ผู้ใช้คุม pattern การเผยแพร่ได้ละเอียดขึ้น
+- ไม่บังคับให้ quote behavior ต้องเหมือน generation behavior
+
+## 7. Workflow ใหม่ของระบบ
+
+### Phase A: Setup Campaign
+1. ผู้ใช้เปิดหน้า `Full Automate`
+2. กรอกชื่อ campaign
+3. เพิ่มหลายหัวข้อ
+4. ระบุ target post count ของแต่ละหัวข้อ
+5. เลือก topic execution mode
+6. เลือก quote distribution mode
+7. กดเริ่มรัน
+
+### Phase B: Find and Generate
+1. ระบบเลือกหัวข้อถัดไปตาม `topicExecutionMode`
+2. ไปหา source post บน X ตามหัวข้อ
+3. ส่ง context ไป AI พร้อม product name และ product link ของหัวข้อนั้น
+4. บันทึกผลเป็น draft พร้อม tag ว่ามาจาก campaign/topic ไหน
+5. เพิ่มตัวนับ `generatedCount`
+6. ประเมินว่าหัวข้อนั้นครบ target หรือยัง
+
+### Phase C: Quote Scheduling
+1. ระบบหยิบ draft ที่พร้อม quote
+2. จัดลำดับตาม `quoteDistributionMode`
+3. เปิด quote composer
+4. เติมข้อความและ submit ตาม flow เดิม
+5. อัปเดต `quotedCount` ของหัวข้อ
+
+### Phase D: Completion
+campaign จะจบเมื่อ:
+
+- ทุกหัวข้อครบทั้ง generate target ที่กำหนด และ quote ตาม policy ที่เลือกแล้ว
+- หรือผู้ใช้หยุดเอง
+- หรือระบบเจอ error สะสมจนข้ามต่อไม่ได้
+
+## 8. ผลกระทบต่อโค้ดเดิม
+รอบนี้ยังไม่ลงมือแก้โค้ด แต่เพื่อให้ implementation ตรงจุด ต้องยอมรับว่าการเปลี่ยนหน้าแรกแบบนี้กระทบมากกว่าการเพิ่ม input field ธรรมดา
+
+ไฟล์ที่คาดว่าจะได้รับผลกระทบ:
+
+### 8.1 sidepanel.html
+- เปลี่ยนหน้าแรกให้เป็น campaign-oriented layout
+- ลดการยึดติดกับ input เดี่ยว `query/product/link`
+- เพิ่ม topic list builder และ rules panel
+
+### 8.2 sidepanel.js
+- เปลี่ยนจาก single session controls ไปเป็น campaign state editor
+- เพิ่ม logic add/remove/reorder topic
+- เพิ่ม save/load campaign draft
+- เพิ่ม runtime monitor ระดับ campaign
+
+### 8.3 background.js
+- เพิ่ม state machine สำหรับ campaign
+- แยก topic scheduler ออกจาก AI queue เดิม
+- เพิ่ม quote scheduler ที่รู้จัก `quoteDistributionMode`
+- map draft/result กลับไปยัง campaign/topic ให้ครบ
+
+### 8.4 content_x.js
+- อาจต้องรองรับการรับคำสั่งค้นหาหลายหัวข้อแบบต่อเนื่อง
+- อาจต้องแยก source selection ให้ผูกกับ topic context ชัดขึ้น
+
+### 8.5 storage keys
+ควรเพิ่ม key ใหม่ เช่น:
+
+- `campaigns`
+- `activeCampaignId`
+- `campaignRuntime`
+
+โดยไม่ควรยัดทุกอย่างเข้า key เดิมอย่าง `settings` หรือ `processQueue`
+
+## 9. แผน implementation ที่แนะนำ
+
+### Milestone 1: Data Model ก่อน UI
+เป้าหมาย:
+
+- นิยาม campaign schema
+- นิยาม topic schema
+- นิยาม execution mode และ quote mode เป็น enum ชัดเจน
+- กำหนด migration จาก state เดิมให้ไม่พัง
+
+เหตุผล:
+
+- ถ้า UI มาก่อน data model จะย้อนแก้หนัก
+
+### Milestone 2: หน้า Full Automate แบบ Static
+เป้าหมาย:
+
+- เปลี่ยนหน้าแรกให้มี Campaign Header, Topic Builder, Rules, Runtime Monitor
+- ยังไม่ต้องรันจริงครบทุก flow
+- เน้น save/load state ใน storage ให้เสถียรก่อน
+
+### Milestone 3: Topic Scheduler
+เป้าหมาย:
+
+- เพิ่มตัวเลือก `round-robin` และ `drain-topic`
+- ให้ background เลือกหัวข้อถัดไปได้ถูกต้อง
+- ผูก generated drafts กลับเข้าหัวข้อที่ถูกต้อง
+
+### Milestone 4: Quote Distribution Scheduler
+เป้าหมาย:
+
+- เพิ่ม `sequential-by-product` และ `alternate-products`
+- ให้ quote flow ดึง draft ตาม policy จริง
+
+### Milestone 5: Runtime Monitoring และ Recovery
+เป้าหมาย:
+
+- แสดง progress ต่อ topic แบบ live
+- resume หลัง service worker sleep ได้ดีขึ้น
+- แสดง error stage ให้รู้ว่าพังค้างตรงไหน
+
+## 10. กติกา validation ที่ควรมีตั้งแต่วันแรก
+
+### Validation ฝั่ง UI
+- ต้องมีอย่างน้อย 1 หัวข้อก่อนเริ่ม
+- หัวข้อห้ามว่าง
+- target post count ต้องมากกว่า 0
+- ลิงก์ถ้าใส่ต้อง parse ได้
+
+### Validation ฝั่ง runtime
+- ห้ามเริ่ม campaign ใหม่ถ้ามี AI queue กำลังทำงานโดยไม่รู้ที่มา
+- draft ที่สร้างต้องมี `campaignId` และ `topicId`
+- quote queue ต้องไม่หยิบ draft ข้าม campaign ผิดชุด
+
+## 11. ความเสี่ยงหลัก
+
+### 11.1 UI ซับซ้อนขึ้นมาก
+จาก single-form กลายเป็น multi-topic editor ถ้า layout ไม่ดีจะรกเร็วมาก
+
+แนวทางลดความเสี่ยง:
+
+- ใช้ table-like card list ที่อ่านง่าย
+- ซ่อน advanced settings ไว้ส่วน rules
+
+### 11.2 Scheduler ซ้อนกัน 2 ชั้น
+จะมีทั้ง AI generation scheduling และ quote distribution scheduling
+
+แนวทางลดความเสี่ยง:
+
+- แยก state machine ของ `generate` กับ `quote`
+- ไม่ใช้ flag memory เดียวคุมทุกอย่าง
+
+### 11.3 Recovery หลัง service worker sleep
+ถ้ายังพึ่ง in-memory มากเกินไป campaign ใหม่จะค้างง่าย
+
+แนวทางลดความเสี่ยง:
+
+- persist campaign runtime ที่จำเป็นลง storage
+- มี recovery pass ตอน service worker ฟื้น
+
+## 12. ขอบเขตที่ยังไม่ทำในรอบนี้
+เพื่อให้ scope ชัด รอบนี้ยังไม่รวม:
+
+- การ redesign results page ทั้งหมด
+- analytics เชิงสถิติขั้นสูง
+- multi-campaign parallel run
+- template prompt per topic แบบซับซ้อนหลาย preset
+
+## 13. Definition of Done สำหรับงานรอบถัดไป
+จะถือว่า feature นี้เริ่ม usable เมื่อครบอย่างน้อย:
+
+1. หน้าแรกเพิ่มหัวข้อได้หลายรายการ
+2. แต่ละหัวข้อใส่สินค้าและลิงก์ของตัวเองได้
+3. ตั้ง target post count ต่อหัวข้อได้
+4. เลือก `round-robin` หรือ `drain-topic` ได้
+5. เลือก `sequential-by-product` หรือ `alternate-products` ได้
+6. draft และ quote ทุกตัว trace กลับได้ว่าอยู่ topic ไหน
+7. ผู้ใช้เห็น progress ต่อหัวข้อจากหน้าแรกได้
+
+## 14. ข้อเสนอเชิงตัดสินใจก่อนเริ่มโค้ด
+ก่อนเริ่ม implementation ควรยืนยัน 3 เรื่องนี้ให้ชัด:
+
+1. 1 หัวข้อจะผูกได้แค่ 1 สินค้า 1 ลิงก์ หรือจะให้ 1 หัวข้อมีหลายสินค้าในตัวเอง
+2. target post count หมายถึงจำนวน draft ที่สร้าง หรือจำนวน quote ที่โพสต์สำเร็จ
+3. หน้าแรกใหม่จะมาแทนหน้าเดิมทั้งหมด หรือให้มี tab `Full Automate` เพิ่มเข้ามาก่อนแล้วค่อยย้าย default ในรอบถัดไป
+
+## 15. ข้อเสนอแนะนำ
+จากโค้ดปัจจุบัน แนวทางที่เสี่ยงต่ำสุดคือ:
+
+1. ทำ `Full Automate` เป็นหน้าแรกใหม่ใน side panel
+2. ใช้โมเดล `1 หัวข้อ = 1 สินค้า = 1 ลิงก์`
+3. ให้ `targetPostCount` หมายถึงจำนวน draft ที่ต้องสร้างก่อน
+4. แยก `quoteDistributionMode` ออกมาต่างหากจาก `topicExecutionMode`
+
+แนวทางนี้ตรงกับความต้องการที่ขอ และยังต่อยอดจาก architecture เดิมได้โดยไม่ต้องรื้อทุก flow พร้อมกันในครั้งเดียว

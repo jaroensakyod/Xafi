@@ -11,7 +11,6 @@
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
 
-    const statusBadge = $('#statusBadge');
     const statusBar = $('#statusBar');
     const statusText = $('#statusText');
     const draftList = $('#draftList');
@@ -37,7 +36,9 @@
     const trendList = $('#trendList');
     const resultsPreviewList = $('#resultsPreviewList');
     const clearResultsBtn = $('#clearResultsBtn');
+    const aiProviderStatus = $('#aiProviderStatus');
     const progressQuery = $('#progressQuery');
+    const progressAiProvider = $('#progressAiProvider');
     const progressProduct = $('#progressProduct');
     const progressPreset = $('#progressPreset');
     const progressSteps = $('#progressSteps');
@@ -45,6 +46,7 @@
     const progressPauseReason = $('#progressPauseReason');
     const HASHTAG_PREFIX = '#';
     const AFFILIATE_PRODUCT_OFFER_URL = 'https://affiliate.shopee.co.th/offer/product_offer';
+    const FULL_AUTO_SOURCE = 'full-auto';
 
     // =============================================
     // Auto Scout State
@@ -53,6 +55,7 @@
     let autoScoutQuery = '';
     let contextProduct = '';
     let productLink = '';
+    let aiProvider = 'grok';
     let trendsCountry = 'TH';
     let autoScoutProgress = null;
     let isTrendsCollapsed = false;
@@ -98,7 +101,7 @@
 
             const res = await sendMessage({
                 type: 'SET_AUTO_SCOUT_STATE',
-                data: { enabled: isAutoScout, query: autoScoutQuery, product: contextProduct, productLink }
+                data: { source: FULL_AUTO_SOURCE, enabled: isAutoScout, query: autoScoutQuery, product: contextProduct, productLink }
             });
 
             if (!res?.success) {
@@ -116,6 +119,26 @@
         } else {
             btnAutoScout.textContent = '🤖 Auto Scout: OFF';
             btnAutoScout.style.background = '#4b5563';
+        }
+    }
+
+    function updateAutomationControlState(campaign) {
+        const isCampaignOwnedRun = campaign?.status === 'running' || campaign?.status === 'paused';
+        if (btnScoutStep) btnScoutStep.disabled = !isCampaignOwnedRun && !isAutoScout;
+        if (btnScoutResume) btnScoutResume.disabled = !isCampaignOwnedRun && !isAutoScout;
+    }
+
+    function updateAiProviderUi(provider = 'grok') {
+        aiProvider = provider === 'gemini' ? 'gemini' : 'grok';
+        const label = aiProvider === 'gemini' ? 'Gemini' : 'Grok';
+
+        if (aiProviderStatus) {
+            aiProviderStatus.textContent = `AI: ${label}`;
+            aiProviderStatus.style.background = aiProvider === 'gemini' ? '#1d4ed8' : '#0f766e';
+        }
+
+        if (progressAiProvider) {
+            progressAiProvider.textContent = label;
         }
     }
 
@@ -157,6 +180,7 @@
         if (!autoQuoteStatus) return;
 
         const state = autoQuoteState || {};
+        const providerLabel = aiProvider === 'gemini' ? 'Gemini' : 'Grok';
         if (!state.active) {
             autoQuoteStatus.textContent = state.message || '⏳ ระบบ Auto Quote ทำงานอยู่ - กำลังลุย Draft ตามคิว';
             return;
@@ -168,8 +192,8 @@
         switch (state.phase) {
             case 'waiting-ai':
                 autoQuoteStatus.textContent = countdown
-                    ? `⏳ รอ AI/Grok ว่างก่อนเริ่ม Auto Quote • เริ่มใน ${countdown}`
-                    : '⏳ รอ AI/Grok ว่างก่อนเริ่ม Auto Quote';
+                    ? `⏳ รอ ${providerLabel} ว่างก่อนเริ่ม Auto Quote • เริ่มใน ${countdown}`
+                    : `⏳ รอ ${providerLabel} ว่างก่อนเริ่ม Auto Quote`;
                 break;
             case 'posting':
                 autoQuoteStatus.textContent = `🚀 กำลังโพสต์ draft ${state.currentDraftId || ''}${pendingCount ? ` • คงเหลือ ${pendingCount} รายการ` : ''}`.trim();
@@ -221,11 +245,11 @@
     }
 
     btnScoutStep?.addEventListener('click', async () => {
-        await sendMessage({ type: 'AUTO_SCOUT_STEP' });
+        await sendMessage({ type: 'AUTO_SCOUT_STEP', data: { source: FULL_AUTO_SOURCE } });
     });
 
     btnScoutResume?.addEventListener('click', async () => {
-        await sendMessage({ type: 'AUTO_SCOUT_RESUME' });
+        await sendMessage({ type: 'AUTO_SCOUT_RESUME', data: { source: FULL_AUTO_SOURCE } });
     });
 
     openResultsPageLink?.addEventListener('click', (event) => {
@@ -244,7 +268,7 @@
 
     contextProductInput?.addEventListener('change', async () => {
         contextProduct = contextProductInput.value.trim();
-        await sendMessage({ type: 'SET_CONTEXT_PRODUCT', data: contextProduct });
+        await sendMessage({ type: 'SET_CONTEXT_PRODUCT', data: { source: FULL_AUTO_SOURCE, value: contextProduct } });
     });
 
     autoScoutQueryInput?.addEventListener('input', () => {
@@ -263,7 +287,7 @@
 
     productLinkInput?.addEventListener('change', async () => {
         productLink = productLinkInput.value.trim();
-        await sendMessage({ type: 'SET_PRODUCT_LINK', data: productLink });
+        await sendMessage({ type: 'SET_PRODUCT_LINK', data: { source: FULL_AUTO_SOURCE, value: productLink } });
     });
 
     openAffiliateProductOfferBtn?.addEventListener('click', () => {
@@ -279,15 +303,18 @@
     // =============================================
     $$('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
-            // Deactivate all
-            $$('.tab').forEach(t => t.classList.remove('active'));
-            $$('.tab-content').forEach(c => c.classList.remove('active'));
-            // Activate selected
-            tab.classList.add('active');
             const tabId = tab.getAttribute('data-tab');
-            $(`#tab-${tabId}`).classList.add('active');
+            switchToTab(tabId);
         });
     });
+
+    function switchToTab(tabId) {
+        if (!tabId) return;
+        $$('.tab').forEach(t => t.classList.remove('active'));
+        $$('.tab-content').forEach(c => c.classList.remove('active'));
+        $(`[data-tab="${tabId}"]`)?.classList.add('active');
+        $(`#tab-${tabId}`)?.classList.add('active');
+    }
 
     // =============================================
     // 2) Load Data on Open
@@ -298,6 +325,7 @@
     loadProcessQueue();
     loadGoogleTrends();
     loadSettings();
+    loadCampaign();
 
     async function loadDrafts() {
         const res = await sendMessage({ type: 'GET_DRAFTS' });
@@ -327,6 +355,9 @@
     async function loadSettings() {
         const res = await sendMessage({ type: 'GET_SETTINGS' });
         if (res?.success && res.data) {
+            aiProvider = res.data.aiProvider || 'grok';
+            $('#aiProvider').value = aiProvider;
+            updateAiProviderUi(aiProvider);
             $('#minViews').value = res.data.minViews || 500000;
             $('#typingSpeedMin').value = res.data.typingSpeedMin || 30;
             $('#typingSpeedMax').value = res.data.typingSpeedMax || 150;
@@ -337,6 +368,7 @@
             $('#scrollPreset').value = res.data.scrollPreset || 'medium';
             $('#manualAssist').checked = Boolean(res.data.manualAssist);
             $('#pauseOnFound').checked = Boolean(res.data.pauseOnFound);
+            $('#pauseOnFoundCount').value = res.data.pauseOnFoundCount || 1;
             $('#checkpointEverySteps').value = res.data.checkpointEverySteps || 6;
             $('#sessionLimit').value = res.data.sessionLimit || 15;
             $('#dailyLimit').value = res.data.dailyLimit || 60;
@@ -634,7 +666,9 @@
     }
 
     function renderGoogleTrends(trends) {
-        if (!trends || !trends.length) {
+        const visibleTrends = Array.isArray(trends) ? trends.slice(0, 20) : [];
+
+        if (!visibleTrends.length) {
             trendList.innerHTML = `
                 <div class="empty-state">
                     <p>📈 ยังดึง Google Trends ไม่ได้</p>
@@ -642,11 +676,11 @@
             return;
         }
 
-        trendList.innerHTML = trends.map(item => `
+        trendList.innerHTML = visibleTrends.map(item => `
             <div class="card">
                 <div class="trend-item">
-                    <strong>${escapeHtml(item.query)}</strong>
-                    <button class="btn-action trend-use" data-query="${escapeAttr(item.query)}">ใช้คำนี้</button>
+                    <strong title="${escapeAttr(item.query)}">${escapeHtml(compactTrendQuery(item.query))}</strong>
+                    <button class="btn-action trend-use" data-query="${escapeAttr(compactTrendQuery(item.query))}">ใช้คำนี้</button>
                 </div>
             </div>`).join('');
 
@@ -665,6 +699,7 @@
     // =============================================
     $('#saveSettings').addEventListener('click', async () => {
         const settings = {
+            aiProvider: $('#aiProvider').value || 'grok',
             minViews: parseInt($('#minViews').value) || 500000,
             typingSpeedMin: parseInt($('#typingSpeedMin').value) || 30,
             typingSpeedMax: parseInt($('#typingSpeedMax').value) || 150,
@@ -675,6 +710,7 @@
             scrollPreset: $('#scrollPreset').value,
             manualAssist: $('#manualAssist').checked,
             pauseOnFound: $('#pauseOnFound').checked,
+            pauseOnFoundCount: Math.max(1, parseInt($('#pauseOnFoundCount').value, 10) || 1),
             checkpointEverySteps: parseInt($('#checkpointEverySteps').value) || 6,
             sessionLimit: parseInt($('#sessionLimit').value) || 15,
             dailyLimit: parseInt($('#dailyLimit').value) || 60,
@@ -688,6 +724,7 @@
         msg.classList.remove('hidden');
 
         if (res?.success) {
+            updateAiProviderUi(settings.aiProvider);
             msg.textContent = '✅ บันทึกเรียบร้อย!';
             msg.className = 'settings-msg msg-success';
         } else {
@@ -800,41 +837,26 @@
 
         switch (status) {
             case 'processing':
-                statusBadge.textContent = '⚡ Processing';
-                statusBadge.className = 'status-badge status-processing';
                 statusBar.classList.remove('hidden');
                 break;
 
             case 'found':
-                statusBadge.textContent = '🔍 Found!';
-                statusBadge.className = 'status-badge status-found';
                 loadViralPosts();
                 break;
 
             case 'done':
-                statusBadge.textContent = '✅ Done';
-                statusBadge.className = 'status-badge status-done';
                 statusBar.classList.add('hidden');
                 if (String(message || '').includes('Auto Quote')) {
                     isAutoQuote = false;
                     updateAutoQuoteUi();
                 }
                 loadDrafts();
-                // สลับไป tab drafts อัตโนมัติ
-                $$('.tab').forEach(t => t.classList.remove('active'));
-                $$('.tab-content').forEach(c => c.classList.remove('active'));
-                $('[data-tab="drafts"]').classList.add('active');
-                $('#tab-drafts').classList.add('active');
-                // Reset status badge หลัง 5 วินาที
-                setTimeout(() => {
-                    statusBadge.textContent = 'Idle';
-                    statusBadge.className = 'status-badge status-idle';
-                }, 5000);
+                if (!(currentCampaign?.status === 'running' || currentCampaign?.status === 'paused')) {
+                    switchToTab('drafts');
+                }
                 break;
 
             case 'error':
-                statusBadge.textContent = '❌ Error';
-                statusBadge.className = 'status-badge status-error';
                 statusBar.classList.remove('hidden');
                 if (String(message || '').includes('Auto Quote')) {
                     isAutoQuote = false;
@@ -867,11 +889,16 @@
             }
             loadGoogleTrends();
         }
+        if (changes.settings?.newValue) {
+            updateAiProviderUi(changes.settings.newValue.aiProvider || 'grok');
+        }
         if (changes.autoScoutProgress) renderProgress(changes.autoScoutProgress.newValue);
+        if (changes.campaign) loadCampaign();
     });
 
     function renderProgress(progress) {
         const current = progress || {};
+        updateAiProviderUi(aiProvider);
         progressQuery.textContent = current.query || '-';
         progressProduct.textContent = current.product || '-';
         progressProduct.title = current.productLink || '';
@@ -919,6 +946,12 @@
     function normalizeHashtagQuery(value) {
         const cleaned = String(value || '').replace(/^#+\s*/, '').trimStart();
         return `${HASHTAG_PREFIX}${cleaned}`;
+    }
+
+    function normalizeCampaignTopic(value) {
+        const cleaned = String(value || '').trim();
+        if (!cleaned) return HASHTAG_PREFIX;
+        return normalizeHashtagQuery(cleaned);
     }
 
     function renderDraftStatusBadge(draft) {
@@ -993,6 +1026,39 @@
         return text.substring(0, maxLen) + '...';
     }
 
+    function compactTrendQuery(text) {
+        const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) return '';
+        if (normalized.length <= 28) return normalized;
+
+        const quoted = normalized.match(/["“'‘]([^"”'’]{2,28})["”'’]/u);
+        if (quoted?.[1]) {
+            return quoted[1].trim();
+        }
+
+        const stopTokens = new Set([
+            'วันนี้', 'ล่าสุด', 'อัปเดต', 'เปิดชื่อ', 'เตือน', 'ระวัง', 'เผย', 'ชี้', 'พบ', 'พร้อม', 'หลัง', 'ก่อน',
+            'the', 'a', 'an', 'of', 'for', 'to', 'and'
+        ]);
+        const tokens = normalized.split(' ')
+            .map(token => token.trim())
+            .filter(token => token && !/^[\d./:+-]+$/.test(token) && !stopTokens.has(token.toLowerCase()));
+
+        const compactTokens = [];
+        for (const token of tokens) {
+            const nextValue = compactTokens.length ? `${compactTokens.join(' ')} ${token}` : token;
+            if (nextValue.length > 28) break;
+            compactTokens.push(token);
+            if (compactTokens.length >= 4) break;
+        }
+
+        if (compactTokens.length) {
+            return compactTokens.join(' ');
+        }
+
+        return truncate(normalized, 28);
+    }
+
     function escapeHtml(str) {
         if (!str) return '';
         const div = document.createElement('div');
@@ -1004,5 +1070,286 @@
         if (!str) return '';
         return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
+
+    // =============================================
+    // Campaign (Full Automate)
+    // =============================================
+    let currentCampaign = null;
+    let saveCampaignTimer = null;
+
+    async function loadCampaign() {
+        const res = await sendMessage({ type: 'GET_CAMPAIGN' });
+        currentCampaign = res?.data || null;
+        renderCampaign();
+    }
+
+    function renderCampaign() {
+        const c = currentCampaign;
+        const nameInput = $('#campaignName');
+        const topicExecMode = $('#topicExecMode');
+        const quoteDistMode = $('#quoteDistMode');
+        const monitor = $('#campaignMonitor');
+        const badge = $('#campaignStatus');
+
+        if (!c) {
+            if (nameInput) nameInput.value = '';
+            renderTopics([{ id: '', topic: '', productName: '', productLink: '', targetPostCount: 3 }]);
+            updateCampaignControls('draft');
+            updateAutomationControlState(null);
+            if (monitor) monitor.classList.add('hidden');
+            if (badge) badge.textContent = '-';
+            return;
+        }
+
+        if (nameInput) nameInput.value = c.name || '';
+        if (topicExecMode) topicExecMode.value = c.topicExecutionMode || 'round-robin';
+        if (quoteDistMode) quoteDistMode.value = c.quoteDistributionMode || 'sequential-by-product';
+        renderTopics(c.topics.length ? c.topics : [{ id: '', topic: '', productName: '', productLink: '', targetPostCount: 3 }]);
+        updateCampaignControls(c.status);
+        updateAutomationControlState(c);
+
+        if (c.status === 'running' || c.status === 'paused') {
+            renderCampaignMonitor(c);
+            if (monitor) monitor.classList.remove('hidden');
+            switchToTab('campaign');
+        } else {
+            if (monitor) monitor.classList.add('hidden');
+        }
+
+        if (badge) {
+            const labels = { draft: '-', running: '\u25b6', paused: '\u23f8', completed: '\u2713', error: '!' };
+            badge.textContent = labels[c.status] || '-';
+        }
+    }
+
+    function renderTopics(topics) {
+        const topicListEl = $('#topicList');
+        if (!topicListEl) return;
+
+        topicListEl.innerHTML = topics.map((t, i) => `
+            <div class="topic-row" data-index="${i}">
+                <div class="topic-row-header">
+                    <span class="topic-number">#${i + 1}</span>
+                    <span class="topic-row-status">${getTopicStatusLabel(t)}</span>
+                    <div class="topic-row-actions">
+                        ${i > 0 ? `<button class="topic-move-up btn-icon" data-index="${i}" title="\u0e02\u0e36\u0e49\u0e19">\u25b2</button>` : ''}
+                        ${i < topics.length - 1 ? `<button class="topic-move-down btn-icon" data-index="${i}" title="\u0e25\u0e07">\u25bc</button>` : ''}
+                        <button class="topic-remove btn-icon" data-index="${i}" title="\u0e25\u0e1a">\u2715</button>
+                    </div>
+                </div>
+                <input type="text" class="topic-field topic-query" placeholder="\u0e2b\u0e31\u0e27\u0e02\u0e49\u0e2d \u0e40\u0e0a\u0e48\u0e19 #aitools" value="${escapeAttr(normalizeCampaignTopic(t.topic || ''))}" data-index="${i}" />
+                <input type="text" class="topic-field topic-product" placeholder="\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32" value="${escapeAttr(t.productName || '')}" data-index="${i}" />
+                <input type="url" class="topic-field topic-link" placeholder="\u0e25\u0e34\u0e07\u0e01\u0e4c\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32" value="${escapeAttr(t.productLink || '')}" data-index="${i}" />
+                <button class="btn-small affiliate-shortcut-btn topic-affiliate-btn" type="button" data-index="${i}">เชื่อมต่อลิงก์ Shopee Affiliate</button>
+                <div class="topic-row-footer">
+                    <label class="topic-count-label">\u0e40\u0e1b\u0e49\u0e32\u0e2b\u0e21\u0e32\u0e22:
+                        <input type="number" class="topic-field topic-count" value="${t.targetPostCount || 3}" min="1" max="50" data-index="${i}" />
+                        \u0e42\u0e1e\u0e2a\u0e15\u0e4c
+                    </label>
+                    ${t.generatedCount ? `<span class="topic-progress">\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e41\u0e25\u0e49\u0e27 ${t.generatedCount}/${t.targetPostCount}</span>` : ''}
+                    ${t.quotedCount ? `<span class="topic-progress">Quote ${t.quotedCount}</span>` : ''}
+                </div>
+            </div>
+        `).join('');
+
+        topicListEl.querySelectorAll('.topic-remove').forEach(btn => {
+            btn.addEventListener('click', () => removeTopicRow(parseInt(btn.dataset.index)));
+        });
+        topicListEl.querySelectorAll('.topic-move-up').forEach(btn => {
+            btn.addEventListener('click', () => moveTopicRow(parseInt(btn.dataset.index), parseInt(btn.dataset.index) - 1));
+        });
+        topicListEl.querySelectorAll('.topic-move-down').forEach(btn => {
+            btn.addEventListener('click', () => moveTopicRow(parseInt(btn.dataset.index), parseInt(btn.dataset.index) + 1));
+        });
+        topicListEl.querySelectorAll('.topic-field').forEach(field => {
+            field.addEventListener('change', () => debouncedSaveCampaign());
+        });
+        topicListEl.querySelectorAll('.topic-query').forEach(field => {
+            field.addEventListener('input', () => {
+                const selectionStart = field.selectionStart;
+                const normalized = normalizeCampaignTopic(field.value);
+                if (field.value !== normalized) {
+                    field.value = normalized;
+                    const nextPos = Math.max(1, selectionStart ?? normalized.length);
+                    field.setSelectionRange(nextPos, nextPos);
+                }
+            });
+            field.addEventListener('blur', () => {
+                field.value = normalizeCampaignTopic(field.value);
+                debouncedSaveCampaign();
+            });
+        });
+        topicListEl.querySelectorAll('.topic-affiliate-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                window.open(AFFILIATE_PRODUCT_OFFER_URL, '_blank');
+            });
+        });
+    }
+
+    function getTopicStatusLabel(topic) {
+        if (!topic.status || topic.status === 'pending') return '';
+        const labels = { running: '\ud83d\udd04 \u0e01\u0e33\u0e25\u0e31\u0e07\u0e17\u0e33', completed: '\u2705 \u0e04\u0e23\u0e1a\u0e41\u0e25\u0e49\u0e27', error: '\u274c \u0e1c\u0e34\u0e14\u0e1e\u0e25\u0e32\u0e14', 'waiting-source': '\u23f3 \u0e23\u0e2d\u0e42\u0e1e\u0e2a\u0e15\u0e4c' };
+        return labels[topic.status] || '';
+    }
+
+    function collectTopicsFromUI() {
+        const rows = $('#topicList')?.querySelectorAll('.topic-row') || [];
+        const topics = [];
+        rows.forEach((row, i) => {
+            topics.push({
+                id: currentCampaign?.topics?.[i]?.id || '',
+                topic: normalizeCampaignTopic(row.querySelector('.topic-query')?.value || ''),
+                productName: row.querySelector('.topic-product')?.value?.trim() || '',
+                productLink: row.querySelector('.topic-link')?.value?.trim() || '',
+                targetPostCount: parseInt(row.querySelector('.topic-count')?.value) || 3
+            });
+        });
+        return topics;
+    }
+
+    function addTopicRow() {
+        const topics = collectTopicsFromUI();
+        topics.push({ id: '', topic: HASHTAG_PREFIX, productName: '', productLink: '', targetPostCount: 3 });
+        renderTopics(topics);
+        debouncedSaveCampaign();
+    }
+
+    function removeTopicRow(index) {
+        const topics = collectTopicsFromUI();
+        if (topics.length <= 1) return;
+        topics.splice(index, 1);
+        renderTopics(topics);
+        debouncedSaveCampaign();
+    }
+
+    function moveTopicRow(from, to) {
+        const topics = collectTopicsFromUI();
+        if (to < 0 || to >= topics.length) return;
+        const [item] = topics.splice(from, 1);
+        topics.splice(to, 0, item);
+        renderTopics(topics);
+        debouncedSaveCampaign();
+    }
+
+    function debouncedSaveCampaign() {
+        if (currentCampaign?.status === 'running') return;
+        clearTimeout(saveCampaignTimer);
+        saveCampaignTimer = setTimeout(() => saveCampaignFromUI(), 600);
+    }
+
+    async function saveCampaignFromUI() {
+        const data = {
+            name: $('#campaignName')?.value?.trim() || '',
+            topics: collectTopicsFromUI(),
+            topicExecutionMode: $('#topicExecMode')?.value || 'round-robin',
+            quoteDistributionMode: $('#quoteDistMode')?.value || 'sequential-by-product'
+        };
+        const res = await sendMessage({ type: 'SAVE_CAMPAIGN', data });
+        if (res?.success) currentCampaign = res.data;
+    }
+
+    function updateCampaignControls(status) {
+        const isRunning = status === 'running';
+        const isPaused = status === 'paused';
+        const isDraft = status === 'draft' || !status;
+        const isCompleted = status === 'completed';
+        const startBtn = $('#campaignStartBtn');
+        const pauseBtn = $('#campaignPauseBtn');
+        const resumeBtn = $('#campaignResumeBtn');
+        const stopBtn = $('#campaignStopBtn');
+        if (startBtn) startBtn.style.display = (isDraft || isCompleted) ? '' : 'none';
+        if (pauseBtn) pauseBtn.style.display = isRunning ? '' : 'none';
+        if (resumeBtn) resumeBtn.style.display = isPaused ? '' : 'none';
+        if (stopBtn) stopBtn.style.display = (isRunning || isPaused) ? '' : 'none';
+
+        const disabled = isRunning || isPaused;
+        const nameInput = $('#campaignName');
+        if (nameInput) nameInput.disabled = disabled;
+        $('#topicList')?.querySelectorAll('input, select, button').forEach(el => el.disabled = disabled);
+        const addBtn = $('#addTopicBtn');
+        if (addBtn) addBtn.disabled = disabled;
+        const execMode = $('#topicExecMode');
+        if (execMode) execMode.disabled = disabled;
+        const distMode = $('#quoteDistMode');
+        if (distMode) distMode.disabled = disabled;
+    }
+
+    function renderCampaignMonitor(campaign) {
+        if (!campaign) return;
+        const monitorContent = $('#campaignMonitorContent');
+        if (!monitorContent) return;
+        const activeTopic = campaign.topics[campaign.activeTopicIndex];
+        const totalTarget = campaign.topics.reduce((s, t) => s + t.targetPostCount, 0);
+        const totalGenerated = campaign.topics.reduce((s, t) => s + (t.generatedCount || 0), 0);
+        const totalQuoted = campaign.topics.reduce((s, t) => s + (t.quotedCount || 0), 0);
+        const phaseLabels = { setup: '\u0e15\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32', generating: '\u0e2a\u0e23\u0e49\u0e32\u0e07 Draft', quoting: 'Quote \u0e2d\u0e31\u0e15\u0e42\u0e19\u0e21\u0e31\u0e15\u0e34', completed: '\u0e40\u0e2a\u0e23\u0e47\u0e08\u0e2a\u0e34\u0e49\u0e19' };
+
+        monitorContent.innerHTML = `
+            <div class="monitor-grid">
+                <div class="monitor-item"><span class="monitor-label">\u0e02\u0e31\u0e49\u0e19\u0e15\u0e2d\u0e19</span><strong>${phaseLabels[campaign.phase] || campaign.phase}</strong></div>
+                <div class="monitor-item"><span class="monitor-label">Draft \u0e23\u0e27\u0e21</span><strong>${totalGenerated} / ${totalTarget}</strong></div>
+                <div class="monitor-item"><span class="monitor-label">Quote \u0e23\u0e27\u0e21</span><strong>${totalQuoted}</strong></div>
+                ${activeTopic ? `<div class="monitor-item"><span class="monitor-label">\u0e2b\u0e31\u0e27\u0e02\u0e49\u0e2d\u0e1b\u0e31\u0e08\u0e08\u0e38\u0e1a\u0e31\u0e19</span><strong>${escapeHtml(activeTopic.topic)}</strong></div>` : ''}
+            </div>
+            <div class="monitor-topics">
+                ${campaign.topics.map((t, i) => `
+                    <div class="monitor-topic-row ${i === campaign.activeTopicIndex && campaign.status === 'running' ? 'active' : ''}">
+                        <span class="monitor-topic-name">${escapeHtml(t.topic || '(\u0e27\u0e48\u0e32\u0e07)')}</span>
+                        <span class="monitor-topic-progress">${t.generatedCount}/${t.targetPostCount} draft</span>
+                        <span class="monitor-topic-status">${getTopicStatusLabel(t)}</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    // Campaign event listeners
+    $('#addTopicBtn')?.addEventListener('click', addTopicRow);
+
+    $('#campaignStartBtn')?.addEventListener('click', async () => {
+        await saveCampaignFromUI();
+        const res = await sendMessage({ type: 'START_CAMPAIGN' });
+        if (!res?.success) { alert(res?.error || '\u0e40\u0e23\u0e34\u0e48\u0e21 Campaign \u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08'); return; }
+        currentCampaign = res.data;
+        renderCampaign();
+        switchToTab('campaign');
+    });
+
+    $('#campaignPauseBtn')?.addEventListener('click', async () => {
+        const res = await sendMessage({ type: 'PAUSE_CAMPAIGN' });
+        if (res?.success) { currentCampaign = res.data; renderCampaign(); }
+    });
+
+    $('#campaignResumeBtn')?.addEventListener('click', async () => {
+        const res = await sendMessage({ type: 'RESUME_CAMPAIGN' });
+        if (res?.success) { currentCampaign = res.data; renderCampaign(); }
+    });
+
+    $('#campaignStopBtn')?.addEventListener('click', async () => {
+        const res = await sendMessage({ type: 'STOP_CAMPAIGN' });
+        if (res?.success) { currentCampaign = res.data; renderCampaign(); }
+    });
+
+    $('#campaignResetBtn')?.addEventListener('click', async () => {
+        if (!confirm('\u0e23\u0e35\u0e40\u0e0b\u0e47\u0e15\u0e08\u0e30\u0e25\u0e1a progress \u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14 \u0e22\u0e37\u0e19\u0e22\u0e31\u0e19?')) return;
+        const res = await sendMessage({ type: 'RESET_CAMPAIGN' });
+        if (res?.success) { currentCampaign = res.data; renderCampaign(); }
+    });
+
+    $('#campaignDeleteBtn')?.addEventListener('click', async () => {
+        if (!confirm('\u0e25\u0e1a Campaign \u0e19\u0e35\u0e49\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14?')) return;
+        await sendMessage({ type: 'DELETE_CAMPAIGN' });
+        currentCampaign = null;
+        renderCampaign();
+    });
+
+    $('#campaignName')?.addEventListener('change', () => debouncedSaveCampaign());
+    $('#topicExecMode')?.addEventListener('change', () => debouncedSaveCampaign());
+    $('#quoteDistMode')?.addEventListener('change', () => debouncedSaveCampaign());
+
+    // Campaign monitor auto-refresh
+    setInterval(() => {
+        if (currentCampaign?.status === 'running') renderCampaignMonitor(currentCampaign);
+    }, 3000);
 
 })();

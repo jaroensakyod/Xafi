@@ -38,6 +38,7 @@
         manualAssist: false,
         checkpointEverySteps: 6,
         pauseOnFound: true,
+        pauseOnFoundCount: 1,
         sessionLimit: 15,
         dailyLimit: 60
     };
@@ -436,10 +437,13 @@
                 type: 'VIRAL_POST_FOUND',
                 data: postData
             }, (response) => {
+                const pauseTarget = Math.max(1, Number(scoutSettings.pauseOnFoundCount || 1));
                 if (response?.limitReached) {
                     pauseAutoScout('ถึง limit ของรอบนี้แล้ว');
                 } else if (response?.success && !response?.duplicate && scoutSettings.pauseOnFound) {
-                    pauseAutoScout('เจอโพสต์ที่เข้าเงื่อนไข');
+                    if (Number(response?.foundThisSession || 0) >= pauseTarget) {
+                        pauseAutoScout(`เจอโพสต์ที่เข้าเงื่อนไขครบ ${pauseTarget} โพสต์`);
+                    }
                 }
             });
         });

@@ -1,7 +1,7 @@
 // =============================================
-// X Viral Repurpose - Content Script (grok.com)
+// X Viral Repurpose - Content Script (AI provider page)
 // =============================================
-// จำลองการพิมพ์แบบมนุษย์บนหน้าเว็บ grok.com
+// จำลองการพิมพ์แบบมนุษย์บนหน้าเว็บ AI provider
 // รับ Prompt จาก background → พิมพ์ทีละตัวอักษร → รอ AI ตอบ → ส่งกลับ
 // =============================================
 
@@ -14,9 +14,18 @@
     let activeRequestId = null;
     let isProcessingPrompt = false;
     let lastCompletedRequestId = null;
+    const aiProvider = getAiProviderMeta();
 
     // --- Selectors แบบยืดหยุ่น (อัปเดตได้เมื่อ DOM เปลี่ยน) ---
     const INPUT_SELECTORS = [
+        'rich-textarea div[contenteditable="true"]',
+        'textarea[aria-label*="Enter a prompt" i]',
+        'textarea[aria-label*="Ask Gemini" i]',
+        'textarea[placeholder*="Enter a prompt" i]',
+        'textarea[placeholder*="Ask Gemini" i]',
+        '[contenteditable="true"][aria-label*="Enter a prompt" i]',
+        '[contenteditable="true"][aria-label*="Ask Gemini" i]',
+        'ms-autosize-textarea textarea',
         'textarea[placeholder]',
         '[contenteditable="true"][role="textbox"]',
         '[contenteditable="true"][data-placeholder]',
@@ -27,14 +36,39 @@
 
     const SEND_BUTTON_SELECTORS = [
         'button[type="submit"]',
+        'button[aria-label*="Send message" i]',
+        'button[aria-label*="Send prompt" i]',
+        'button[aria-label*="Run" i]',
         'button[aria-label*="Send" i]',
         'button[aria-label*="send" i]',
+        'button[aria-label*="Submit" i]',
+        'button[data-test-id*="send"]',
+        'button[mattooltip*="Send" i]',
+        'button[mattooltip*="ส่ง" i]',
         'button[aria-label*="ส่ง"]',
         'button[data-testid="send-button"]',
+        'message-actions button',
         'form button:last-of-type'
     ];
 
+    const STOP_BUTTON_SELECTORS = [
+        'button[aria-label*="Stop generating" i]',
+        'button[aria-label*="Stop response" i]',
+        'button[aria-label*="Stop" i]',
+        'button[mattooltip*="Stop" i]',
+        'button[aria-label*="หยุด"]'
+    ];
+
     const RESPONSE_SELECTORS = [
+        '.conversation-container model-response',
+        '.conversation-container .response-content',
+        '.conversation-container .markdown',
+        'message-content .markdown',
+        'message-content',
+        'model-response',
+        '.model-response-text',
+        '[class*="response-content"]',
+        '[class*="model-response"]',
         '[data-testid="message-content"]',
         '.message-content',
         '.markdown-content',
@@ -70,7 +104,7 @@
         }
     });
 
-    // แจ้ง background ว่าหน้า grok.com โหลดเสร็จแล้ว
+    // แจ้ง background ว่าหน้า AI provider โหลดเสร็จแล้ว
     notifyPageReady();
 
     async function notifyPageReady() {
@@ -97,7 +131,7 @@
         // 2.1) หากล่อง Input
         const inputEl = await waitForElement(INPUT_SELECTORS, 15000);
         if (!inputEl) {
-            throw new Error('ไม่พบช่องพิมพ์บน grok.com - DOM อาจเปลี่ยนแปลง');
+            throw new Error(`ไม่พบช่องพิมพ์บน ${aiProvider.label} - DOM อาจเปลี่ยนแปลง`);
         }
 
         // 2.2) เคลียร์ข้อความเก่า (ถ้ามี)
@@ -106,9 +140,9 @@
 
         const responseBaseline = new Set(collectResponseCandidates());
 
-        // 2.3) พิมพ์ Prompt แบบเดิมทีละตัวอักษร
+        // 2.3) ใส่ Prompt ด้วยวิธีที่เหมาะกับแต่ละ provider
         updateStatus('กำลังพิมพ์ Prompt...');
-        await typeHumanLike(inputEl, prompt, settings);
+        await fillPromptInput(inputEl, prompt, settings);
 
         // 2.4) รอสักครู่ก่อนกด Send (เหมือนคนอ่านทวนอีกที)
         await sleep(randomBetween(800, 1500));
@@ -280,7 +314,7 @@
         }
 
         if (!inputContainsText(element, normalizedText)) {
-            throw new Error('ใส่ prompt ลง Grok ไม่สำเร็จ');
+            throw new Error(`ใส่ prompt ลง ${aiProvider.label} ไม่สำเร็จ`);
         }
     }
 
@@ -323,7 +357,7 @@
         await sleep(500);
         if (await waitForSendStart(input, 1500)) return;
 
-        throw new Error('ไม่พบปุ่มส่งของ Grok');
+        throw new Error(`ไม่พบปุ่มส่งของ ${aiProvider.label}`);
     }
 
     function collectSendButtons(input) {
@@ -343,6 +377,11 @@
             Array.from(composerRoot.querySelectorAll('button')).forEach(pushButton);
         }
 
+        const providerRoot = input?.closest('form, rich-textarea, .conversation-container, .chat-input-container, body');
+        if (providerRoot) {
+            Array.from(providerRoot.querySelectorAll('button')).forEach(pushButton);
+        }
+
         for (const selector of SEND_BUTTON_SELECTORS) {
             const button = document.querySelector(selector);
             pushButton(button);
@@ -358,7 +397,9 @@
         let score = 0;
         if (button.type === 'submit') score += 50;
         if (/send|submit|ส่ง/.test(text)) score += 80;
+        if (/gemini|run|prompt/.test(text)) score += 30;
         if (/arrow|up|paper-plane|rocket|submit/.test(text)) score += 40;
+        if (button.closest('message-actions, form, rich-textarea')) score += 20;
         if (button.querySelector('svg')) score += 10;
         if (button.disabled) score -= 200;
         return score;
@@ -367,7 +408,7 @@
     async function waitForSendStart(input, timeout = 5000) {
         const startedAt = Date.now();
         while (Date.now() - startedAt < timeout) {
-            const stopBtn = document.querySelector('button[aria-label*="Stop" i], button[aria-label*="หยุด"]');
+            const stopBtn = queryAny(STOP_BUTTON_SELECTORS);
             const currentText = getInputText(input);
             if (stopBtn || !currentText.trim()) {
                 return true;
@@ -412,9 +453,7 @@
 
                 if (stableCount >= STABLE_THRESHOLD) {
                     // เช็คว่าไม่มีปุ่ม "Stop" แล้ว (= AI พิมพ์เสร็จจริง)
-                    const stopBtn = document.querySelector(
-                        'button[aria-label*="Stop" i], button[aria-label*="หยุด"]'
-                    );
+                    const stopBtn = queryAny(STOP_BUTTON_SELECTORS);
 
                     if (!stopBtn) {
                         debugAIResponse('stable-response', currentText, lastUsableText || usableText);
@@ -471,6 +510,13 @@
 
     function collectResponseCandidates() {
         const texts = [];
+
+        if (aiProvider.key === 'gemini') {
+            document.querySelectorAll('message-content, model-response, .response-content, .markdown, .model-response-text').forEach((element) => {
+                const text = element.innerText?.trim();
+                if (text) texts.push(text);
+            });
+        }
 
         for (const selector of RESPONSE_SELECTORS) {
             document.querySelectorAll(selector).forEach((element) => {
@@ -532,6 +578,10 @@
             return '';
         }
 
+        if (/google ai studio|double-check responses|gemini can make mistakes|draft saved/i.test(cleaned)) {
+            return '';
+        }
+
         return cleaned;
     }
 
@@ -556,8 +606,9 @@
         if (/[ก-๙]/.test(clean)) score += 120;
         if (/\n/.test(clean)) score += 30;
         if (/^[-•]/m.test(clean)) score += 25;
+        if (aiProvider.key === 'gemini' && /\n/.test(clean)) score += 40;
         if (isMostlyUrl(clean)) score -= 300;
-        if (/executed code|searching|thinking|analyzing|read more|sources?|search results?|used tools?|reasoned for/i.test(text)) score -= 500;
+        if (/executed code|searching|thinking|analyzing|read more|sources?|search results?|used tools?|reasoned for|google ai studio|gemini can make mistakes|draft saved/i.test(text)) score -= 500;
 
         return score;
     }
@@ -629,7 +680,10 @@
         const expected = String(text || '')
             .replace(/\s+/g, ' ')
             .trim();
-        return Boolean(current) && current.includes(expected.slice(0, Math.min(expected.length, 32)));
+        if (!current || !expected) return false;
+
+        const sampleLength = aiProvider.key === 'gemini' ? 20 : 32;
+        return current.includes(expected.slice(0, Math.min(expected.length, sampleLength)));
     }
 
     function pressEnter(element) {
@@ -712,7 +766,24 @@
     }
 
     function updateStatus(text) {
-        console.log(`[XVR-AI] ${text}`);
+        console.log(`[XVR-AI:${aiProvider.key}] ${text}`);
+    }
+
+    function queryAny(selectors) {
+        for (const selector of selectors) {
+            const element = document.querySelector(selector);
+            if (element) return element;
+        }
+
+        return null;
+    }
+
+    function getAiProviderMeta() {
+        if (window.location.hostname.includes('gemini.google.com')) {
+            return { key: 'gemini', label: 'Gemini' };
+        }
+
+        return { key: 'grok', label: 'Grok' };
     }
 
     async function tryCopyToClipboard(text) {
@@ -724,5 +795,5 @@
         }
     }
 
-    console.log('[X Viral Repurpose] AI script loaded on grok.com');
+    console.log(`[X Viral Repurpose] AI script loaded on ${aiProvider.label}`);
 })();

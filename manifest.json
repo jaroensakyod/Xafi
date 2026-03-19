@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "X Viral Repurpose",
+  "name": "Xaffi Auto",
   "version": "1.0.0",
-  "description": "ค้นหาโพสต์ Viral บน X (500k+ views) แล้วสร้างคอนเทนต์ด้วย AI บน grok.com แบบอัตโนมัติ",
+  "description": "Find viral posts on X (500k+ views) and generate content automatically with Grok or Gemini.",
   "permissions": [
     "alarms",
     "sidePanel",
@@ -15,6 +15,7 @@
     "https://x.com/*",
     "https://twitter.com/*",
     "https://grok.com/*",
+    "https://gemini.google.com/*",
     "https://trends.google.com/*"
   ],
   "background": {
@@ -28,7 +29,7 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://grok.com/*"],
+      "matches": ["https://grok.com/*", "https://gemini.google.com/*"],
       "js": ["content_ai.js"],
       "run_at": "document_idle"
     }
@@ -37,6 +38,6 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "X Viral Repurpose"
+    "default_title": "Xaffi Auto"
   }
 }

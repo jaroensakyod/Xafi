@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>X Viral Repurpose</title>
+    <title>Xaffi Auto</title>
     <link rel="stylesheet" href="sidepanel.css">
 </head>
 
@@ -12,46 +12,31 @@
     <!-- ===== Header ===== -->
     <header class="header">
         <div class="header-top">
-            <h1>🔥 X Viral Repurpose</h1>
-            <div style="display: flex; gap: 8px; align-items: center;">
-                <button id="btnAutoScout" class="btn-small"
-                    style="background:#4b5563; color:white; border:none; border-radius:4px; padding:4px 8px; cursor:pointer; font-size:12px;">🤖
-                    Auto Scout: OFF</button>
-                <div id="statusBadge" class="status-badge status-idle">Idle</div>
+            <h1>🔥 Xaffi Auto</h1>
+            <div>
+                <span id="aiProviderStatus" class="btn-small"
+                    style="background:#0f766e; color:white; cursor:default;">AI:
+                    Grok</span>
             </div>
-        </div>
-        <p class="header-sub">ค้นหาโพสต์ Viral → สร้างคอนเทนต์ด้วย AI</p>
-        <div class="auto-scout-bar">
-            <input id="autoScoutQuery" class="auto-scout-input" type="text"
-                placeholder="พิมพ์คำค้นที่อยากให้ไปหา เช่น #aitools, #bitcoin, #startup" />
-        </div>
-        <div class="auto-scout-bar">
-            <input id="contextProduct" class="auto-scout-input" type="text"
-                placeholder="สินค้า/บริการที่อยากผูกกับคอนเทนต์ เช่น คอร์ส AI, SaaS, ebook" />
-        </div>
-        <div class="auto-scout-bar">
-            <input id="productLink" class="auto-scout-input" type="url"
-                placeholder="ลิงก์สินค้า/บริการ เช่น https://example.com/product" />
-        </div>
-        <div class="affiliate-shortcut-row">
-            <button id="openAffiliateProductOffer" class="btn-small affiliate-shortcut-btn"
-                type="button">เชื่อมต่อลิงก์สินค้า Shopee Affiliate</button>
-        </div>
-        <div class="header-actions-row">
-            <button id="btnScoutStep" class="btn-small">⤵ Step Scroll</button>
-            <button id="btnScoutResume" class="btn-small">▶ Resume</button>
-            <a id="openResultsPage" class="btn-small" href="#">📚 Results</a>
-            <button id="openLatestResult" class="btn-small">🆕 Latest</button>
         </div>
     </header>
 
     <!-- ===== Tab Navigation ===== -->
     <nav class="tabs">
-        <button class="tab active" data-tab="drafts">
+        <button class="tab active" data-tab="automation">
+            🤖 Automation
+        </button>
+        <button class="tab" data-tab="campaign">
+            🚀 Full Auto <span id="campaignStatus" class="tab-badge">-</span>
+        </button>
+        <button class="tab" data-tab="drafts">
             📝 Drafts <span id="draftCount" class="tab-badge">0</span>
         </button>
         <button class="tab" data-tab="results">
             📚 Results <span id="resultCount" class="tab-badge">0</span>
+        </button>
+        <button class="tab" data-tab="trends">
+            📈 Trends
         </button>
         <button class="tab" data-tab="found">
             🔍 Found <span id="foundCount" class="tab-badge">0</span>
@@ -72,37 +57,165 @@
         </div>
     </div>
 
-    <section class="progress-panel">
-        <div class="progress-grid">
-            <div class="progress-item">
-                <span class="progress-label">คำค้น</span>
-                <strong id="progressQuery">-</strong>
+    <section id="tab-automation" class="tab-content active">
+        <div class="campaign-builder">
+            <div class="campaign-command-center">
+                <div class="campaign-automation-card">
+                    <div class="campaign-panel-head">
+                        <div>
+                            <span class="campaign-panel-kicker">Automation Control</span>
+                            <h3>ควบคุม Auto Scout และดูสถานะการทำงาน</h3>
+                        </div>
+                        <button id="btnAutoScout" class="btn-small campaign-scout-toggle"
+                            style="background:#4b5563; color:white; border:none; border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px;">🤖
+                            Auto Scout: OFF</button>
+                    </div>
+                    <div class="auto-scout-bar">
+                        <input id="autoScoutQuery" class="auto-scout-input" type="text"
+                            placeholder="พิมพ์คำค้นที่อยากให้ไปหา เช่น #aitools, #bitcoin, #startup" />
+                    </div>
+                    <div class="auto-scout-bar">
+                        <input id="contextProduct" class="auto-scout-input" type="text"
+                            placeholder="สินค้า/บริการที่อยากผูกกับคอนเทนต์ เช่น คอร์ส AI, SaaS, ebook" />
+                    </div>
+                    <div class="auto-scout-bar">
+                        <input id="productLink" class="auto-scout-input" type="url"
+                            placeholder="ลิงก์สินค้า/บริการ เช่น https://example.com/product" />
+                    </div>
+                    <div class="affiliate-shortcut-row campaign-affiliate-row">
+                        <button id="openAffiliateProductOffer" class="btn-small affiliate-shortcut-btn"
+                            type="button">เชื่อมต่อลิงก์สินค้า Shopee Affiliate</button>
+                    </div>
+                    <div class="header-actions-row campaign-utility-row">
+                        <button id="btnScoutStep" class="btn-small">⤵ Step Scroll</button>
+                        <button id="btnScoutResume" class="btn-small">▶ Resume</button>
+                        <a id="openResultsPage" class="btn-small" href="#">📚 Results</a>
+                        <button id="openLatestResult" class="btn-small">🆕 Latest</button>
+                    </div>
+                </div>
+
+                <section class="progress-panel campaign-progress-panel">
+                    <div class="progress-grid">
+                        <div class="progress-item">
+                            <span class="progress-label">AI</span>
+                            <strong id="progressAiProvider">Grok</strong>
+                        </div>
+                        <div class="progress-item">
+                            <span class="progress-label">คำค้น</span>
+                            <strong id="progressQuery">-</strong>
+                        </div>
+                        <div class="progress-item">
+                            <span class="progress-label">สินค้า</span>
+                            <strong id="progressProduct">-</strong>
+                        </div>
+                        <div class="progress-item">
+                            <span class="progress-label">Preset</span>
+                            <strong id="progressPreset">medium</strong>
+                        </div>
+                        <div class="progress-item">
+                            <span class="progress-label">Steps</span>
+                            <strong id="progressSteps">0</strong>
+                        </div>
+                        <div class="progress-item">
+                            <span class="progress-label">Found / Session</span>
+                            <strong id="progressFound">0</strong>
+                        </div>
+                        <div class="progress-item progress-item-wide">
+                            <span class="progress-label">สถานะ</span>
+                            <strong id="progressPauseReason">พร้อม</strong>
+                        </div>
+                    </div>
+                </section>
             </div>
-            <div class="progress-item">
-                <span class="progress-label">สินค้า</span>
-                <strong id="progressProduct">-</strong>
-            </div>
-            <div class="progress-item">
-                <span class="progress-label">Preset</span>
-                <strong id="progressPreset">medium</strong>
-            </div>
-            <div class="progress-item">
-                <span class="progress-label">Steps</span>
-                <strong id="progressSteps">0</strong>
-            </div>
-            <div class="progress-item">
-                <span class="progress-label">Found / Session</span>
-                <strong id="progressFound">0</strong>
-            </div>
-            <div class="progress-item">
-                <span class="progress-label">สถานะ</span>
-                <strong id="progressPauseReason">พร้อม</strong>
+        </div>
+    </section>
+
+    <!-- ===== Tab: Full Auto (Campaign) ===== -->
+    <section id="tab-campaign" class="tab-content">
+        <div class="campaign-builder">
+            <section class="campaign-overview-card">
+                <div class="campaign-overview-copy">
+                    <span class="campaign-kicker">Full Auto Workspace</span>
+                    <h2>วางแผนหัวข้อและกติกาของ campaign</h2>
+                    <p>ใช้หน้านี้สำหรับตั้งชื่อแคมเปญ เพิ่มหลายหัวข้อ และกำหนดลำดับการวิ่งหัวข้อกับการ Quote</p>
+                </div>
+            </section>
+
+            <div class="campaign-workspace">
+                <section class="campaign-panel campaign-setup-panel">
+                    <div class="campaign-panel-head campaign-panel-head-stack">
+                        <div>
+                            <span class="campaign-panel-kicker">Campaign Setup</span>
+                            <h3>กำหนดชื่อและรายการหัวข้อ</h3>
+                        </div>
+                        <div class="campaign-controls">
+                            <button id="campaignStartBtn" class="btn-small btn-primary"
+                                style="background:#10b981;">&#9654;
+                                เริ่ม</button>
+                            <button id="campaignPauseBtn" class="btn-small" style="display:none;">&#9208; พัก</button>
+                            <button id="campaignResumeBtn" class="btn-small" style="display:none;">&#9654;
+                                ทำต่อ</button>
+                            <button id="campaignStopBtn" class="btn-small btn-danger" style="display:none;">&#9209;
+                                หยุด</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group campaign-name-group">
+                        <label>ชื่อ Campaign</label>
+                        <input type="text" id="campaignName" class="auto-scout-input"
+                            placeholder="เช่น รอบเช้า 20 มี.ค." />
+                    </div>
+
+                    <div class="campaign-section">
+                        <div class="section-header">
+                            <h3>หัวข้อ</h3>
+                            <button id="addTopicBtn" class="btn-small">+ เพิ่มหัวข้อ</button>
+                        </div>
+                        <div id="topicList" class="topic-list"></div>
+                    </div>
+                </section>
+
+                <section class="campaign-panel campaign-rules-panel">
+                    <div class="campaign-panel-head campaign-panel-head-stack">
+                        <div>
+                            <span class="campaign-panel-kicker">Execution Rules</span>
+                            <h3>ตั้งลำดับการสลับหัวข้อและการ Quote</h3>
+                        </div>
+                    </div>
+
+                    <div class="campaign-section campaign-rules-grid">
+                        <div class="form-group campaign-rule-card">
+                            <label>ลำดับหัวข้อ</label>
+                            <select id="topicExecMode">
+                                <option value="round-robin">สลับหัวข้อ (Round Robin)</option>
+                                <option value="drain-topic">ทำหัวข้อเดียวให้ครบก่อน</option>
+                            </select>
+                        </div>
+                        <div class="form-group campaign-rule-card">
+                            <label>ลำดับ Quote</label>
+                            <select id="quoteDistMode">
+                                <option value="sequential-by-product">เรียงทีละสินค้า</option>
+                                <option value="alternate-products">สลับสินค้า</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="campaignMonitor" class="campaign-monitor hidden">
+                        <h3>สถานะ Campaign</h3>
+                        <div id="campaignMonitorContent"></div>
+                    </div>
+
+                    <div class="campaign-actions">
+                        <button id="campaignResetBtn" class="btn-small">🔄 รีเซ็ต</button>
+                        <button id="campaignDeleteBtn" class="btn-small btn-danger">🗑️ ลบ Campaign</button>
+                    </div>
+                </section>
             </div>
         </div>
     </section>
 
     <!-- ===== Tab: Drafts ===== -->
-    <section id="tab-drafts" class="tab-content active">
+    <section id="tab-drafts" class="tab-content">
         <div class="section-header">
             <h2>ข้อความที่ AI สร้างไว้</h2>
             <div style="display: flex; gap: 8px;">
@@ -131,8 +244,7 @@
         <div id="resultsPreviewList" class="card-list"></div>
     </section>
 
-    <!-- ===== Tab: Found (Viral Posts) ===== -->
-    <section id="tab-found" class="tab-content">
+    <section id="tab-trends" class="tab-content">
         <div class="section-header">
             <div class="section-header-title-row">
                 <h2>Google Trends วันนี้</h2>
@@ -155,6 +267,10 @@
                 </div>
             </div>
         </div>
+    </section>
+
+    <!-- ===== Tab: Found (Viral Posts) ===== -->
+    <section id="tab-found" class="tab-content">
         <div class="section-header">
             <h2>โพสต์ Viral ที่พบ</h2>
             <div style="display: flex; gap: 8px;">
@@ -233,19 +349,30 @@
             </div>
 
             <div class="form-group">
+                <label>AI Provider</label>
+                <select id="aiProvider">
+                    <option value="grok">Grok</option>
+                    <option value="gemini">Gemini</option>
+                </select>
+                <span class="input-hint">เลือกเว็บ AI ที่จะใช้สร้างคอนเทนต์ระหว่าง Grok และ Gemini</span>
+            </div>
+
+            <div class="form-group">
                 <label>Prompt Mode</label>
                 <select id="promptMode">
                     <option value="soft-sell">Soft Sell</option>
                     <option value="hot-take">Hot Take</option>
                 </select>
-                <span class="input-hint">Soft Sell จะเน้นขายเนียน ๆ ส่วน Hot Take จะเปิดแรงและมีน้ำหนักเชิงความเห็นมากขึ้น</span>
+                <span class="input-hint">Soft Sell จะเน้นขายเนียน ๆ ส่วน Hot Take
+                    จะเปิดแรงและมีน้ำหนักเชิงความเห็นมากขึ้น</span>
             </div>
 
             <div class="form-group">
                 <label>Prompt Template</label>
                 <textarea id="promptTemplate" rows="10"
                     placeholder="ใส่ Prompt ที่ต้องการ...ใช้ {CONTENT} เป็นตัวแทนเนื้อหาต้นทาง"></textarea>
-                <span class="input-hint">ระบบจะใช้ Prompt Mode เป็น style layer เพิ่มอีกชั้น และบังคับข้อความสุดท้ายรวมลิงก์สินค้าแล้วไม่เกิน 280 ตัวอักษร</span>
+                <span class="input-hint">ระบบจะใช้ Prompt Mode เป็น style layer เพิ่มอีกชั้น
+                    และบังคับข้อความสุดท้ายรวมลิงก์สินค้าแล้วไม่เกิน 280 ตัวอักษร</span>
             </div>
 
             <div class="form-group">
@@ -264,6 +391,14 @@
 
             <div class="form-group checkbox-group">
                 <label><input type="checkbox" id="pauseOnFound"> หยุดเมื่อเจอโพสต์ที่เข้าเงื่อนไข</label>
+            </div>
+
+            <div class="form-group pause-on-found-config">
+                <label>หยุดเมื่อเจอครบกี่โพสต์</label>
+                <div class="input-with-hint">
+                    <input type="number" id="pauseOnFoundCount" value="1" min="1" max="100">
+                    <span class="input-hint">เช่น ใส่ 3 = ระบบจะหยุดเมื่อเจอโพสต์ที่เข้าเงื่อนไขครบ 3 โพสต์</span>
+                </div>
             </div>
 
             <div class="form-group">
@@ -299,6 +434,8 @@
             <div id="settingsMsg" class="settings-msg hidden"></div>
         </div>
     </section>
+
+    <footer class="app-footer">power by Copyright © 2026 AMTF inc.</footer>
 
     <script src="sidepanel.js"></script>
 </body>

@@ -1,32 +1,37 @@
-# Xafi
+# Xaffi Auto
 
-Chrome Extension สำหรับ workflow นี้โดยตรง:
+Chrome Extension (Manifest V3) สำหรับ workflow หาโพสต์ viral บน X, สร้างคอนเทนต์ด้วย AI provider แบบไม่ใช้ API, และปล่อย automation flow ต่อเนื่องจาก side panel.
 
-- สแกนโพสต์บน X ที่เข้าเกณฑ์ viral
-- ส่งเนื้อหาไปให้ Grok สร้างคอนเทนต์ใหม่แบบไม่ใช้ API
-- เก็บผลเป็น Draft และ Results
-- จัดคิวหลายโพสต์แล้วประมวลผลต่อเนื่อง
-- เปิด flow Quote post บน X พร้อมเติมข้อความให้อัตโนมัติ
+snapshot ปัจจุบันรองรับ:
 
-สถานะปัจจุบันของโปรเจกต์ไม่ใช่ prototype แล้ว แต่ยังเป็น automation-heavy extension ที่พึ่งพา DOM ของ X และ Grok สูง จึงต้องมองว่าเป็นระบบที่ใช้งานได้จริงในบาง flow และต้องเฝ้าดูความเสถียรต่อเนื่องใน production-like usage
+- viral scan บน X/Twitter
+- AI generation ผ่าน Grok หรือ Gemini
+- Full Auto campaign orchestration หลายหัวข้อ
+- queue, drafts, results, และ auto quote
+- Google Trends helper สูงสุด 20 รายการพร้อม compact labels
+
+สถานะปัจจุบันไม่ใช่ prototype แล้ว แต่ยังเป็น automation-heavy extension ที่พึ่งพา DOM ของ X และ AI provider สูง จึงเหมาะกับ internal / operator usage มากกว่าการอ้างว่า stable เต็มรูปแบบ
 
 ## ฟีเจอร์หลัก
 
 - Viral post detection จากหน้า X/Twitter
-- Queue-based AI generation ผ่าน Grok
-- Human-like typing บนหน้า Grok
+- Queue-based AI generation ผ่าน Grok หรือ Gemini
+- Human-like typing บนหน้า AI provider
 - Draft management ใน Side Panel
 - Results library แยกหน้าเก็บผลงาน
+- Automation tab สำหรับ Auto Scout และ runtime progress
+- Full Auto campaign tab สำหรับหลายหัวข้อ/หลายสินค้า
 - Auto Scout พร้อม Google Trends helper
 - Auto Quote workflow สำหรับโพสต์ที่มี source tweet พร้อม countdown และสถานะคิว
-- Prompt และ behavior ปรับได้จาก Settings รวม prompt mode
+- Prompt และ behavior ปรับได้จาก Settings รวม AI provider และ prompt mode
 - Auto submit ไปที่ X พร้อม verification หลังคลิกโพสต์
 - Auto Quote scheduler แบบ `chrome.alarms` เพื่อให้คิวต่อรอบหลังยังเดินได้ใน MV3
+- หยุด Auto Scout เมื่อเจอครบจำนวนโพสต์ที่ตั้งไว้ได้
 
 ## โครงสร้างไฟล์
 
 ```text
-Xfollowup/
+Xafi/
 ├── manifest.json
 ├── background.js
 ├── content_ai.js
@@ -40,6 +45,7 @@ Xfollowup/
 ├── results.css
 ├── README.md
 └── doc/
+    ├── 2026-03-19-update.md
     ├── code_review.md
     ├── implement_plan.md
     └── release_readiness.md
@@ -52,10 +58,10 @@ Xfollowup/
 ศูนย์กลางของ extension
 
 - เก็บ settings และ state ใน `chrome.storage.local`
-- เปิด popup window ของ Grok
+- เปิด popup window ของ AI provider ที่เลือกไว้
 - ควบคุมคิว `processQueue` และ in-memory queue
 - รับผลลัพธ์จาก Grok แล้วบันทึกเป็น drafts/results
-- ประสานงาน Auto Scout และ Auto Quote
+- ประสานงาน Auto Scout, Full Auto campaign, และ Auto Quote
 - เก็บ `autoQuoteState` และ schedule รอบถัดไปผ่าน `chrome.alarms`
 
 ### 2. `content_x.js`
@@ -71,9 +77,9 @@ Xfollowup/
 
 ### 3. `content_ai.js`
 
-รันบน `grok.com`
+รันบน `grok.com` และ `gemini.google.com`
 
-- หา input composer ของ Grok
+- หา input composer ของ AI provider
 - พิมพ์ prompt แบบ human-like
 - หา send button แบบ heuristic
 - รอคำตอบและคัดกรอง prompt echo
@@ -83,24 +89,36 @@ Xfollowup/
 
 แดชบอร์ดหลักของผู้ใช้
 
+- Automation tab
+- Full Auto campaign tab
 - Drafts
 - Results preview
 - Found viral posts
 - Queue management
 - Settings
-- Auto Scout controls
+- Auto Scout controls พร้อม stop-after-N-found
 - Auto Quote status/countdown
+- Google Trends tab แยกจาก Found
 
 ## Workflow ปัจจุบัน
 
 1. ผู้ใช้เปิด X แล้วปล่อยให้ extension สแกนโพสต์
 2. `content_x.js` ตรวจโพสต์ที่ view ถึง threshold
 3. ผู้ใช้กดสร้างคอนเทนต์ หรือเลือกหลายโพสต์เข้า Queue
-4. `background.js` เปิด/ใช้หน้าต่าง Grok เดิม
+4. `background.js` เปิด/ใช้หน้าต่าง AI provider เดิม
 5. `content_ai.js` พิมพ์ prompt และรอ response
 6. ผลลัพธ์ถูกบันทึกเป็น Draft และ Result
 7. ผู้ใช้แก้ไข, copy, post หรือ quote ต่อจาก Side Panel
 8. ถ้าเปิด Auto Quote ระบบจะโพสต์ draft ที่มี source tweet ให้อัตโนมัติทีละรายการตามเวลาที่ตั้งไว้
+
+## Full Auto Workflow
+
+1. ไปแท็บ `Full Auto`
+2. ตั้งชื่อ campaign
+3. เพิ่มหลายหัวข้อ โดยแต่ละหัวข้อมี hashtag, product, product link, และ target post count ของตัวเอง
+4. เลือก topic execution mode ระหว่าง `round-robin` กับ `drain-topic`
+5. เลือก quote distribution mode ระหว่าง `sequential-by-product` กับ `alternate-products`
+6. กดเริ่ม campaign เพื่อให้ระบบสลับหาโพสต์, ส่ง AI, สร้าง draft, และต่อด้วย quote phase
 
 ## การติดตั้ง
 
@@ -128,6 +146,13 @@ Xfollowup/
 4. ไปแท็บ `Queue`
 5. กด `สร้างคอนเทนต์ตามคิว`
 
+### Automation / Auto Scout
+
+1. ไปแท็บ `Automation`
+2. ตั้ง hashtag, product, และ product link
+3. เปิด `Auto Scout`
+4. ถ้าต้องการให้หยุดเมื่อเจอครบจำนวนหนึ่ง ให้เปิด `หยุดเมื่อเจอโพสต์ที่เข้าเงื่อนไข` และกำหนดจำนวนใน Settings
+
 ### Draft to X
 
 1. ไปแท็บ `Drafts`
@@ -144,26 +169,29 @@ Xfollowup/
 
 ## อัปเดตล่าสุด
 
-- เพิ่ม `Prompt Mode` แบบ `soft-sell` และ `hot-take`
-- ปรับ prompt pipeline ให้คุม output เป็น 4 บรรทัดมากขึ้น
-- เพิ่ม auto submit ไปที่ X พร้อม success/error verification หลังคลิกโพสต์
-- เพิ่มสถานะ draft สำหรับ `auto_quote_queued`, `auto_quote_posting`, `posted`, `post_error`
-- เพิ่ม countdown ของ Auto Quote ใน side panel
-- ย้าย scheduler ของ Auto Quote ไปใช้ `chrome.alarms` เพื่อให้ทำงานต่อได้แม้ service worker ถูกพัก
+- รีแบรนด์ extension เป็น `Xaffi Auto`
+- เพิ่มการเลือก AI provider ระหว่าง Grok และ Gemini
+- เพิ่ม Full Auto campaign system สำหรับหลายหัวข้อ/หลายสินค้า
+- แยกหน้า `Automation`, `Full Auto`, `Trends`, `Found` ออกจากกันชัดเจน
+- จำกัด Auto Scout flow ให้สั่งผ่านหน้า Full Auto / Automation flow ที่กำหนดเท่านั้น
+- เพิ่ม Google Trends fallback และ compact labels ให้รายการอ่านง่ายขึ้น
+- เพิ่ม stop-after-N-found setting สำหรับ Auto Scout
+- เพิ่ม footer `power by Copyright © 2026 AMTF inc.` ใน side panel
 
 ## ข้อจำกัดสำคัญ
 
-- พึ่งพา DOM ของ X และ Grok สูงมาก
+- พึ่งพา DOM ของ X และ AI provider สูงมาก
 - ไม่มี automated tests
 - ไม่มี retry policy แบบเต็มรูปแบบสำหรับ stuck DOM states
 - queue state ของ AI generation ยังใช้ทั้ง in-memory และ storage จึงยังมี edge cases ที่ต้องเฝ้าดู
-- `README` เดิมใน repo นี้ไม่สะท้อนสถานะปัจจุบันแล้ว จึงถูกเขียนใหม่ในรอบนี้
+- Google Trends ยังเป็น best-effort helper เพราะ source endpoint ฝั่ง Google ไม่เสถียรทุกประเทศ/ทุกเวลา
 
 ## เอกสารเพิ่มเติม
 
+- `doc/2026-03-19-update.md` สรุปงานของวันนี้แบบ changelog grounded จากโค้ดที่แก้จริง
 - `doc/code_review.md` รีวิวแบบ grounded จากโค้ดจริง พร้อมข้อดี ข้อเสีย และความเสี่ยง
 - `doc/release_readiness.md` สรุปความพร้อมก่อนปล่อยและสิ่งที่ควรทำต่อ
-- `doc/implement_plan.md` แผน implementation เดิมของโปรเจกต์
+- `doc/implement_plan.md` แผน Full Automate Home ที่ใช้เป็นฐานของรอบ implement นี้
 
 ## คำแนะนำก่อนใช้งานจริง
 
