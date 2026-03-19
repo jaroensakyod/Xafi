@@ -1,32 +1,32 @@
 # Xaffi Auto
 
-Chrome Extension แบบ Manifest V3 สำหรับหาโพสต์บน X, สร้าง draft ด้วย Grok หรือ Gemini แบบ browser automation, และรัน workflow แบบ Full Auto ตั้งแต่ `Found -> Queue -> Draft -> Quote`
+Chrome Extension (Manifest V3) for finding viral posts on X, generating drafts via Grok or Gemini through browser automation, and running a Full Auto workflow end-to-end: `Found -> Queue -> Draft -> Quote`.
 
-snapshot ปัจจุบันเหมาะกับ internal/operator usage และผ่านการ harden จากปัญหา runtime จริงหลายรอบแล้ว แต่ยังไม่ควรมองว่า stable ต่อการเปลี่ยน DOM ของ X หรือ AI provider
+The current snapshot is built for internal/operator usage and has been hardened through multiple rounds of real-world runtime issues. It should not yet be considered stable against DOM changes by X or AI providers.
 
 ## What This Repo Does
 
-- scan โพสต์บน X/Twitter
-- เก็บโพสต์ที่เข้าเงื่อนไขไปไว้ใน `Found`
-- ส่งโพสต์เข้า `Queue`
-- เปิด Grok หรือ Gemini เพื่อสร้าง draft โดยไม่ใช้ API
-- บันทึกเป็น `Drafts` และ `Results`
-- โพสต์หรือ Quote ต่อบน X แบบอัตโนมัติ
-- รัน campaign หลายหัวข้อผ่านหน้า `Full Auto`
+- Scan posts on X/Twitter
+- Collect posts matching criteria into `Found`
+- Send posts to `Queue`
+- Open Grok or Gemini to generate drafts without using an API
+- Save results as `Drafts` and `Results`
+- Post or Quote on X automatically
+- Run multi-topic campaigns via the `Full Auto` tab
 
 ## Current Feature Set
 
-- AI provider switch ระหว่าง Grok และ Gemini
-- Full Auto campaign หลายหัวข้อ/หลายสินค้า
-- topic execution mode แบบ `round-robin` และ `drain-topic`
-- quote distribution mode แบบ `sequential-by-product` และ `alternate-products`
-- Auto Scout พร้อม Google Trends helper
-- Auto Quote แบบ stateful ผ่าน `chrome.alarms`
-- countdown Auto Quote แบบนาที+วินาที
-- summary สำเร็จ/ไม่สำเร็จ/ข้าม ในหน้า Drafts
-- skip failed draft อัตโนมัติระหว่าง Auto Quote
-- ปุ่ม `บังคับหยุด AI` สำหรับ recovery งานค้าง
-- stop-after-N-found สำหรับ Auto Scout
+- AI provider switch between Grok and Gemini
+- Full Auto campaign with multiple topics/products
+- Topic execution mode: `round-robin` and `drain-topic`
+- Quote distribution mode: `sequential-by-product` and `alternate-products`
+- Auto Scout with Google Trends helper
+- Stateful Auto Quote via `chrome.alarms`
+- Auto Quote countdown with minutes + seconds display
+- Summary of succeeded/failed/skipped in the Drafts view
+- Automatic skip of failed drafts during Auto Quote
+- `Force Stop AI` button for recovery of stuck jobs
+- Stop-after-N-found for Auto Scout
 
 ## Main Files
 
@@ -57,42 +57,42 @@ Xafi/
 
 ### `background.js`
 
-service worker ที่คุม orchestration กลางทั้งหมด
+Service worker that controls all central orchestration:
 
-- settings/state persistence
+- Settings/state persistence
 - AI popup lifecycle
-- queue processing
-- drafts/results persistence
-- campaign orchestration
+- Queue processing
+- Drafts/results persistence
+- Campaign orchestration
 - Auto Quote scheduling
-- text normalization
+- Text normalization
 
 ### `content_x.js`
 
-content script ฝั่ง X/Twitter
+Content script on the X/Twitter side:
 
-- scan tweet cards
-- parse views
-- inject action buttons
-- open quote flow
-- fill compose input
-- auto submit พร้อม verification
-- run search/scout behavior
+- Scan tweet cards
+- Parse views
+- Inject action buttons
+- Open quote flow
+- Fill compose input
+- Auto submit with verification
+- Run search/scout behavior
 
 ### `content_ai.js`
 
-content script ฝั่ง Grok/Gemini
+Content script on the Grok/Gemini side:
 
-- detect composer
-- type prompt แบบ human-like
-- click send
-- wait/extract response
-- strip tool-status noise
-- send response กลับพร้อม `requestId`
+- Detect composer
+- Type prompt in a human-like manner
+- Click send
+- Wait for and extract response
+- Strip tool-status noise
+- Send response back with `requestId`
 
 ### `sidepanel.*`
 
-UI หลักของ operator
+Main operator UI with tabs:
 
 - Automation
 - Full Auto
@@ -107,102 +107,102 @@ UI หลักของ operator
 
 ### Full Auto
 
-flow ที่ตั้งใจตอนนี้คือ:
+The intended flow is:
 
-1. เลือก topic จาก campaign
-2. ค้นหาใน X แบบ `Top`
-3. เก็บ source post เข้า `Found`
-4. เติม `processQueue`
-5. generate draft โดยใช้ product/productLink ของ topic นั้น
-6. ส่งเข้า Auto Quote ตาม policy
+1. Select a topic from the campaign
+2. Search on X using `Top` results
+3. Collect source posts into `Found`
+4. Add to `processQueue`
+5. Generate draft using the topic's product/productLink
+6. Send to Auto Quote according to policy
 
-behavior ที่ harden แล้ว:
+Hardened behaviors:
 
-- ไม่ใช้ `Latest`
-- พิมพ์ query และกด Enter จริง
-- no-results จะข้าม topic ได้
-- ชน limit จะ pause campaign แทน reload วน
-- หัวข้อแต่ละอันมี metadata ติดไปถึง found/queue/draft/quote
+- Does not use `Latest` tab
+- Types query and presses Enter in the real page
+- No-results will skip the topic
+- Hitting a limit will pause the campaign instead of endlessly reloading
+- Each topic carries metadata all the way through found/queue/draft/quote
 
 ### AI Response Safety
 
-สิ่งที่เพิ่มเพื่อกัน context ปน:
+Measures added to prevent context contamination:
 
-- `requestId` ต่อ prompt
-- reject stale response
-- strip ข้อความ wrapper เช่น `Gemini said`
-- ใช้ `productName`/`productLink` ต่อ item แทนการอิง global state อย่างเดียว
+- `requestId` per prompt
+- Reject stale responses
+- Strip wrapper text such as `Gemini said`
+- Use per-item `productName`/`productLink` instead of relying solely on global state
 
 ### Auto Quote
 
-สิ่งที่ทำได้ตอนนี้:
+Current capabilities:
 
-- schedule รอบถัดไปผ่าน `chrome.alarms`
-- countdown แสดงในหน้า Drafts จุดเดียว
-- แสดงนาที+วินาที
-- ถ้า draft fail จะ mark เป็น `post_error` และข้ามรายการนั้นอัตโนมัติ
-- มี summary ว่าสำเร็จกี่รายการ ไม่สำเร็จกี่รายการ ข้ามกี่รายการ
-- แสดงเหตุผลล่าสุดของ draft ที่ fail
+- Schedule next run via `chrome.alarms`
+- Countdown displayed in the Drafts section
+- Displays minutes + seconds
+- If a draft fails, it is marked as `post_error` and skipped automatically
+- Summary shows how many succeeded, failed, and were skipped
+- Shows the most recent failure reason
 
 ## Installation
 
-1. เปิด Chrome ที่ `chrome://extensions/`
-2. เปิด `Developer mode`
-3. กด `Load unpacked`
-4. เลือกโฟลเดอร์นี้
-5. กด `Reload` หลังอัปเดตโค้ด หาก permission หรือ service worker เปลี่ยน
+1. Open Chrome at `chrome://extensions/`
+2. Enable `Developer mode`
+3. Click `Load unpacked`
+4. Select this folder
+5. Click `Reload` after code updates if permissions or service worker changed
 
 ## Typical Usage
 
 ### Manual Flow
 
-1. เปิด X feed หรือ search page
-2. ให้ extension scan โพสต์
-3. เลือกโพสต์เข้า `Found` หรือ `Queue`
-4. สร้าง draft ด้วย AI
-5. ตรวจ draft ในหน้า Drafts
-6. กด `Post to X` หรือใช้ Auto Quote
+1. Open an X feed or search page
+2. Let the extension scan posts
+3. Select posts into `Found` or `Queue`
+4. Generate drafts with AI
+5. Review drafts in the Drafts tab
+6. Click `Post to X` or use Auto Quote
 
 ### Full Auto Flow
 
-1. ไปแท็บ `Full Auto`
-2. ตั้งชื่อ campaign
-3. เพิ่ม topic หลายรายการ พร้อมสินค้าและลิงก์
-4. ตั้ง target ต่อ topic
-5. เลือก execution/quote mode
-6. กดเริ่ม campaign
-7. ติดตามผลใน `Found`, `Queue`, `Drafts`, และ monitor ของ campaign
+1. Go to the `Full Auto` tab
+2. Name the campaign
+3. Add multiple topics with products and links
+4. Set target count per topic
+5. Choose execution/quote mode
+6. Start the campaign
+7. Monitor progress in `Found`, `Queue`, `Drafts`, and the campaign monitor
 
 ### Recovery Flow
 
-ถ้า AI popup หรือ queue ค้าง:
+If the AI popup or queue gets stuck:
 
-1. กด `⛔ บังคับหยุด AI`
-2. ตรวจ queue/draft state
-3. เริ่ม run ต่อใหม่
+1. Click `Force Stop AI`
+2. Check queue/draft state
+3. Resume the run
 
 ## Current Limits
 
-- พึ่งพา DOM ของ X, Grok, Gemini สูงมาก
-- ไม่มี automated tests
-- `background.js` ยังใหญ่และรวมหลาย responsibility
-- AI queue ยังใช้ทั้ง memory และ storage
-- Google Trends เป็น helper แบบ best-effort
-- ถ้า X เปลี่ยน DOM ของ search/composer flow อาจต้องแก้ selector หรือ timing ใหม่
+- Heavy reliance on the DOM structure of X, Grok, and Gemini
+- No automated tests
+- `background.js` is large and mixes multiple responsibilities
+- AI queue uses both in-memory and storage state
+- Google Trends is a best-effort helper
+- If X changes its search/composer DOM, selectors or timing may need updates
 
 ## Documentation
 
-- `doc/2026-03-19-knowledge-base.md`: knowledge base หลักของ snapshot ปัจจุบัน
-- `doc/2026-03-19-update.md`: changelog ของรอบ implement วันนี้
-- `doc/2026-03-19-full-auto-stability.md`: ปัญหา runtime และแนวทางแก้ของ Full Auto
-- `doc/code_review.md`: grounded code review
-- `doc/release_readiness.md`: release risk และ smoke-test checklist
-- `doc/implement_plan.md`: แผน Full Automate Home ที่ใช้เป็นฐาน implementation
+- `doc/2026-03-19-knowledge-base.md`: Core knowledge base for the current snapshot
+- `doc/2026-03-19-update.md`: Changelog for the current implementation round
+- `doc/2026-03-19-full-auto-stability.md`: Runtime issues and fixes for Full Auto
+- `doc/code_review.md`: Grounded code review
+- `doc/release_readiness.md`: Release risk and smoke-test checklist
+- `doc/implement_plan.md`: Full Automate Home plan used as the implementation base
 
 ## Recommended Next Work
 
-1. แยก `background.js` เป็นหลายโมดูล
-2. เพิ่ม queue watchdog
-3. เพิ่ม debug mode ใน UI
-4. เพิ่ม unit tests ให้ text utilities และ prompt builder
-5. ทำ smoke test ทุกครั้งหลัง X หรือ AI provider เปลี่ยน UI
+1. Split `background.js` into multiple modules
+2. Add a queue watchdog
+3. Add a debug mode to the UI
+4. Add unit tests for text utilities and prompt builder
+5. Run a smoke test after every X or AI provider UI change

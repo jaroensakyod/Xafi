@@ -1,254 +1,262 @@
 # Code Review
 
-เอกสารนี้รีวิวจากโค้ดจริงใน repo snapshot ปัจจุบัน ไม่ได้รีวิวจากแผนเก่าหรือเจตนาการออกแบบเพียงอย่างเดียว
+This document is a review based on the actual code in the current repo snapshot, not solely from old plans or design intentions.
 
 ## Snapshot Update 2026-03-18
 
-รอบนี้มีการเปลี่ยนแปลงที่สำคัญและควรนับว่าเป็น improvement จริงใน architecture ของ flow ปัจจุบัน:
+This round includes significant changes that should be considered genuine improvements to the current flow architecture:
 
-- เพิ่ม `promptMode` (`soft-sell`, `hot-take`) และปรับ default prompt ให้คุมโทนกับโครงสร้างได้แม่นขึ้น
-- เพิ่ม post-processing ฝั่ง background เพื่อ normalize output ให้กลับมาเป็น 4 บรรทัดก่อน save draft
-- `Post to X` เปลี่ยนจาก prepare compose อย่างเดียวไปเป็น auto submit พร้อม success/error verification
-- `Auto Quote` เปลี่ยนจาก loop ที่อิง memory timer ไปเป็น stateful flow ที่เก็บสถานะและ countdown ใน storage
-- scheduler ของ `Auto Quote` ย้ายไปใช้ `chrome.alarms` แทน `setTimeout` เพื่อรับมือ lifecycle ของ MV3 service worker ได้ดีขึ้น
+- Added `promptMode` (`soft-sell`, `hot-take`) and improved the default prompt for better tone and structure control
+- Added post-processing on the background side to normalize output into 4 lines before saving the draft
+- `Post to X` changed from only preparing the composer to auto-submitting with success/error verification
+- `Auto Quote` changed from a loop relying on memory timers to a stateful flow that persists state and countdown in storage
+- `Auto Quote` scheduler migrated to `chrome.alarms` instead of `setTimeout` to better handle MV3 service worker lifecycle
 
-สรุปเชิง review สำหรับ snapshot นี้: ไม่พบ blocking issue ใหม่จากชุดแก้ล่าสุดเมื่อดูจากโค้ดและ static validation แต่ยังมี residual risk เดิมจาก DOM fragility และการไม่มี test harness
+Review summary for this snapshot: No new blocking issues found from the latest change set based on code and static validation, but residual risk from DOM fragility and lack of test harness remains.
 
-## สรุปภาพรวม
+## Overview
 
-โปรเจกต์นี้มีแกนหลักชัดเจนและเดินมาถูกทางสำหรับงาน automation แบบ browser-only:
+This project has a clear core and is heading in the right direction for browser-only automation:
 
-- ใช้ `background.js` เป็น coordinator กลางได้เหมาะกับ Manifest V3
-- มีการแยก concern ระหว่าง X, Grok, Side Panel, Results page ชัดพอสมควร
-- state สำคัญถูกเก็บใน `chrome.storage.local` ทำให้ UI หลายส่วน sync กันได้
-- มีการ harden หลายจุดแล้ว เช่น queue status, prompt echo filtering, quote compose fallback
+- Uses `background.js` as a central coordinator, appropriate for Manifest V3
+- Has reasonably clear separation of concerns between X, Grok, Side Panel, and Results page
+- Critical state is stored in `chrome.storage.local`, enabling multi-component UI sync
+- Several areas have been hardened, such as queue status, prompt echo filtering, and quote compose fallback
 
-แต่ในมุม review เพื่อพร้อมใช้งานต่อเนื่อง ยังมีจุดเสี่ยงหลักจาก 3 เรื่อง:
+However, from a review perspective for sustained use, there are three key risk areas:
 
-- automation พึ่งพา DOM และ selector หนักมาก
-- ไม่มี test harness หรือ observability ที่พอสำหรับจับ regression
-- business state กระจายทั้ง memory และ storage ทำให้ recovery บางกรณียังเปราะ
+- Automation relies heavily on DOM and selectors
+- No test harness or observability sufficient to catch regressions
+- Business state is split between memory and storage, making recovery fragile in some cases
 
-## จุดที่ทำได้ดี
+## Strengths
 
-### 1. แยกบทบาทของไฟล์ค่อนข้างชัด
+### 1. Clear File Role Separation
 
-- `background.js` คุม orchestration, queue, persistence, routing
-- `content_x.js` ดูเฉพาะ X scanning และ compose flow
-- `content_ai.js` ดูเฉพาะ Grok typing และ response extraction
-- `sidepanel.js` ดูเฉพาะ UI interactions
+- `background.js` handles orchestration, queue, persistence, routing
+- `content_x.js` handles only X scanning and compose flow
+- `content_ai.js` handles only Grok typing and response extraction
+- `sidepanel.js` handles only UI interactions
 
-ผลคือแม้ไฟล์จะยาว แต่ mental model ของระบบยังตามได้
+Result: Even though files are long, the system's mental model remains followable.
 
-### 2. Queue model พัฒนามาถูกทาง
+### 2. Queue Model Is Evolving Well
 
-จุดที่ดีใน implementation ปัจจุบัน:
+Current implementation strengths:
 
-- มี persistent queue ผ่าน `processQueue`
-- มี status ชัดเจน `queued`, `processing`, `done`, `error`
-- มี update timestamp และ error field
-- queue item ไม่หายจาก UI ทันทีหลังทำงานเสร็จ
+- Persistent queue via `processQueue`
+- Clear statuses: `queued`, `processing`, `done`, `error`
+- Has update timestamps and error fields
+- Queue items are not immediately removed from UI after completion
 
-นี่เป็นการยกระดับจาก “ยิงทีละโพสต์” ไปเป็น workflow จริงที่ผู้ใช้ตรวจสอบย้อนหลังได้
+This elevates the system from "fire one post at a time" to a real workflow with retrospective inspection.
 
-### 3. Grok extraction ดีขึ้นกว่าระดับ prototype มาก
+### 3. Grok Extraction Is Well Beyond Prototype Level
 
-ใน `content_ai.js` มีการเพิ่ม logic ที่จำเป็นจริง:
+In `content_ai.js`, essential logic has been added:
 
-- baseline snapshot ของข้อความก่อนส่ง
-- prompt echo filtering
-- candidate ranking
-- suspicious response filtering
-- fallback รอ response รอบถัดไป
+- Baseline snapshot of text before sending
+- Prompt echo filtering
+- Candidate ranking
+- Suspicious response filtering
+- Fallback to wait for the next response cycle
 
-ชุดนี้ทำให้ปัญหา “เอา prompt กลับมาแทน answer” ลดลงในเชิงโครงสร้าง ไม่ใช่แก้แค่ปลายเหตุ
+This set structurally reduces the problem of "getting the prompt back instead of the answer," rather than just patching symptoms.
 
-### 4. X compose flow มี verification ไม่ใช่ blind write
+### 4. X Compose Flow Has Verification, Not Blind Write
 
-ใน `content_x.js` การเติมข้อความมีการ:
+In `content_x.js`, the text insertion flow:
 
-- clear input
-- ลอง paste/insert ก่อน
-- ตรวจว่าข้อความเข้า compose จริง
-- fallback ไป human-like typing
-- throw error ถ้าเขียนไม่เข้า
+- Clears input
+- Tries paste/insert first
+- Verifies text actually entered the composer
+- Falls back to human-like typing
+- Throws error if writing fails
 
-นี่เป็น design ที่ถูกต้องสำหรับ UI automation ที่ DOM เปลี่ยนได้
+This is the correct design for UI automation where DOM can change.
 
-### 5. Side Panel ใช้งานจริงได้
+### 5. Side Panel Is Production-Usable
 
-UI ไม่ใช่แค่ demo:
+The UI is not just a demo:
 
-- มี progress panel
-- มี queue tab
-- มี Google Trends helper
-- มี result preview
-- มี settings ครบทั้ง AI, scout, quote timing
+- Has a progress panel
+- Has a queue tab
+- Has a Google Trends helper
+- Has result preview
+- Has complete settings for AI, scout, and quote timing
 
-สำหรับ internal tool หรือ operator-facing tool ถือว่า usable แล้ว
+For an internal or operator-facing tool, this is usable.
 
-## จุดที่ยังไม่ดีพอ
+## Weaknesses
 
-### 1. `background.js` ใหญ่เกินและรับผิดชอบหลายเรื่องเกินไป
+### 1. `background.js` Is Too Large and Has Too Many Responsibilities
 
-ตอนนี้ไฟล์นี้ทำพร้อมกันหลายบทบาท:
+This file currently handles multiple roles simultaneously:
 
-- settings store
-- message router
-- queue manager
+- Settings store
+- Message router
+- Queue manager
 - Grok window lifecycle
-- draft/result persistence
-- auto quote scheduler
+- Draft/result persistence
+- Auto quote scheduler
 - Google Trends fetcher
-- text normalization helpers
+- Text normalization helpers
 
-ผลเสีย:
+Consequences:
 
-- เปลี่ยน feature หนึ่งอาจกระทบ flow อื่นง่าย
-- regression tracing ยาก
-- testing แบบแยกส่วนแทบทำไม่ได้
+- Changing one feature can easily affect other flows
+- Regression tracing is difficult
+- Isolated testing is nearly impossible
 
-ข้อเสนอแนะ:
+Recommendation:
 
-- แยกอย่างน้อยเป็น `queue`, `drafts`, `grok-session`, `auto-scout`, `utils/text`
+- Split into at least: `queue`, `drafts`, `grok-session`, `auto-scout`, `utils/text`
 
-### 2. queue ใช้ทั้ง in-memory และ storage พร้อมกัน
+### 2. Queue Uses Both In-Memory and Storage Simultaneously
 
-โครงสร้างปัจจุบันมีทั้ง:
+The current structure has:
 
-- `processQueue` ใน storage
-- `aiProcessQueue` ใน memory
-- `pendingPrompt` ใน memory
-- `isProcessingAIQueue` ใน memory
+- `processQueue` in storage
+- `aiProcessQueue` in memory
+- `pendingPrompt` in memory
+- `isProcessingAIQueue` in memory
 
-ข้อดีคือ runtime ง่ายขึ้น แต่ข้อเสียคือ recovery หลัง service worker sleep/restart ยังไม่แข็งแรงพอ
+The advantage is simpler runtime, but the downside is that recovery after service worker sleep/restart is not robust enough.
 
-ตัวอย่างความเสี่ยง:
+Example risks:
 
-- worker หลุดตอน item เป็น `processing`
-- `pendingPrompt` หาย แต่ storage ยังบอกว่ากำลังทำงาน
-- queue กลับมาทำงานซ้ำหรือค้างได้ถ้า state ไม่ sync สมบูรณ์
+- Worker dies while an item is `processing`
+- `pendingPrompt` is lost but storage still indicates active work
+- Queue can re-execute or stall if state is not fully synced
 
-ข้อเสนอแนะ:
+Recommendation:
 
-- เพิ่ม watchdog และ recovery pass ตอน worker start
-- เก็บ `pendingPrompt` บางส่วนใน storage
-- มี `lease` หรือ `processingStartedAt` timeout สำหรับ item ที่ค้าง
+- Add a watchdog and recovery pass on worker start
+- Persist parts of `pendingPrompt` in storage
+- Add a `lease` or `processingStartedAt` timeout for stuck items
 
-### 3. selector strategy ยัง fragile ตามธรรมชาติของ target site
+### 3. Selector Strategy Is Inherently Fragile
 
-แม้จะมีหลาย fallback แล้ว แต่ยังเป็น heuristic-heavy logic เช่น:
+Despite multiple fallbacks, the logic is still heuristic-heavy, for example:
 
-- finding send button บน Grok
-- หา quote action บน X
-- หา source tweet article
-- parse views จาก engagement DOM
+- Finding the send button on Grok
+- Finding the quote action on X
+- Finding the source tweet article
+- Parsing views from engagement DOM
 
-จุดนี้ไม่ใช่ “โค้ดผิด” แต่เป็น technical risk สูงโดยธรรมชาติของงานประเภทนี้
+This is not "wrong code" but is inherently high technical risk for this type of work.
 
-ข้อเสนอแนะ:
+Recommendation:
 
-- สร้าง selector registry แยกไฟล์
-- ทำ debug mode ที่แสดง selector hit/miss
-- log ว่า fail ที่ stage ไหน เช่น `find-input`, `send-click`, `wait-response`, `open-quote`, `fill-compose`
+- Create a selector registry in a separate file
+- Add a debug mode that shows selector hit/miss
+- Log which stage failed, e.g., `find-input`, `send-click`, `wait-response`, `open-quote`, `fill-compose`
 
-### 4. Side Panel ยังมี blocking popup อยู่หลายจุด
+### 4. Side Panel Still Has Blocking Popups
 
-แม้ popup บางส่วนถูกถอดออกแล้ว แต่ใน `sidepanel.js` ยังมี `alert` และ `confirm` หลายจุด
+Although some popups have been removed, `sidepanel.js` still has several `alert` and `confirm` calls.
 
-ผลกระทบ:
+Impact:
 
-- UX สะดุด
-- ยากต่อ automation ต่อเนื่อง
-- inconsistent กับแนวทางที่เลี่ยง popup ใน queue flow ไปแล้ว
+- UX interruptions
+- Difficult for continuous automation
+- Inconsistent with the popup-free approach already taken in the queue flow
 
-ข้อเสนอแนะ:
+Recommendation:
 
-- เปลี่ยน `alert` เป็น inline toast/status ทั้งหมด
-- ใช้ modal ของ UI เองแทน `confirm`
+- Replace all `alert` calls with inline toast/status messages
+- Use the UI's own modal instead of `confirm`
 
-### 5. ไม่มี test coverage และไม่มี deterministic simulation
+### 5. No Test Coverage and No Deterministic Simulation
 
-ไม่มี unit test, integration test, หรือ mock DOM test สำหรับ logic สำคัญ เช่น:
+There are no unit tests, integration tests, or mock DOM tests for critical logic such as:
 
 - `buildPrompt`
 - `buildFinalPostText`
 - `normalizeDraftStructure`
 - `parseViewCount`
-- queue transition
-- response extraction ranking
+- Queue transitions
+- Response extraction ranking
 
-ผลคือทุก regression ต้องจับจาก manual testing เป็นหลัก
+Result: Every regression must be caught through manual testing.
 
-ข้อเสนอแนะ:
+Recommendation:
 
-- แยก pure functions ไปไฟล์ utility
-- เริ่มด้วย test ของ text transformation ก่อน
-- ใช้ fixture HTML สำหรับ parser บางส่วน
+- Extract pure functions into utility files
+- Start with tests for text transformation first
+- Use fixture HTML for some parser tests
 
-### 6. observability ยังเบาเกินไป
+### 6. Observability Is Still Too Light
 
-ตอนนี้มี console log บางจุด แต่ยังไม่พอสำหรับ debug production issues แบบผู้ใช้รายงานว่า “ไม่ทำงาน”
+There are some console logs at certain points, but they are insufficient for debugging production issues where the user reports "it doesn't work."
 
-ควรมีอย่างน้อย:
+At minimum, there should be:
 
-- last action
-- current queue item id
-- current stage
-- last error
-- timestamps สำคัญ
+- Last action
+- Current queue item ID
+- Current stage
+- Last error
+- Key timestamps
 
-และให้ดูได้จาก side panel หรือ results/debug tab
+These should be viewable from the side panel or a results/debug tab.
 
-## ความเสี่ยงเชิงพฤติกรรม
+## Behavioral Risks
 
-### Risk A: Auto Quote อาจชนกับ UI timing ของ X
+### Risk A: Auto Quote May Conflict with X UI Timing
 
-แม้ตอนนี้มี guard ไม่ให้เริ่มพร้อม AI queue และมี fallback การพิมพ์ แต่ X เป็น React app ที่ timing sensitive มาก จุดนี้ยังถือว่า fragile
+Although there are guards preventing simultaneous operation with the AI queue and typing fallbacks, X is a timing-sensitive React app. This is still fragile.
 
-### Risk B: Grok response ready detection ยังพึ่ง heuristic
+### Risk B: Grok Response Ready Detection Still Relies on Heuristics
 
-ถ้า Grok เปลี่ยน UI หรือเพิ่ม system text ใหม่ logic `waitForAIResponse` อาจรับข้อความผิดอีกได้
+If Grok changes its UI or adds new system text, the `waitForAIResponse` logic may capture incorrect text again.
 
-### Risk C: Auto Scout ถูกจำกัดด้วยการ normalize เป็น hashtag เสมอ
+### Risk C: Auto Scout Is Constrained by Always Normalizing to Hashtag
 
-`sidepanel.js` บังคับ prefix `#` ให้ query ทุกครั้ง ซึ่งเหมาะกับบางเคส แต่จำกัด use case ที่ต้องการค้นหาคำปกติหรือ phrase search
+`sidepanel.js` forces a `#` prefix on every query, which works for some cases but limits use cases that require plain keyword or phrase search.
 
-### Risk D: service worker lifecycle ดีขึ้นสำหรับ Auto Quote แต่ AI queue ยังพึ่ง memory
+### Risk D: Service Worker Lifecycle Improved for Auto Quote but AI Queue Still Relies on Memory
 
-Auto Quote ได้ลดความเสี่ยงลงชัดเจนเพราะใช้ `chrome.alarms` และมี restore pass ตอน worker ตื่นขึ้นมาใหม่แล้ว
+Auto Quote has clearly reduced risk by using `chrome.alarms` and having a restore pass when the worker wakes up.
 
-อย่างไรก็ตาม AI generation queue ยังมี state สำคัญที่พึ่ง in-memory เช่น `pendingPrompt`, `aiProcessQueue`, `isProcessingAIQueue` จึงยังไม่ถือว่า recoverable เต็มรูปแบบทั้งระบบ
+However, the AI generation queue still has critical state in memory such as `pendingPrompt`, `aiProcessQueue`, `isProcessingAIQueue`, so the system is not fully recoverable across the board.
 
-## ความพร้อมเชิง release
+## Release Readiness
 
-### พร้อมในระดับไหน
+### What Level Is Ready
 
-พร้อมสำหรับ:
+Ready for:
 
-- internal use
-- operator-driven workflow
-- iterative testing กับผู้ใช้กลุ่มเล็ก
+- Internal use
+- Operator-driven workflow
+- Iterative testing with a small user group
 
-ยังไม่พร้อมสำหรับ:
+Not ready for:
 
-- public release แบบไม่ต้อง support ใกล้ชิด
-- long unattended automation
-- claim ว่า stable ต่อ DOM changes
+- Public release without close support
+- Long unattended automation
+- Claims of stability against DOM changes
 
-## ข้อเสนอแนะลำดับถัดไป
+## Recommended Next Steps
 
-1. แยก `background.js` เป็น module ย่อย
-2. เพิ่ม watchdog สำหรับ AI queue item ที่ค้าง
-3. ถอด popup blocking ใน side panel ออกทั้งหมด
-4. แยก pure utilities แล้วเริ่มเขียน tests
-5. เพิ่ม debug/diagnostics panel
-6. แยก selector registry เพื่ออัปเดต DOM change ง่ายขึ้น
+1. Split `background.js` into sub-modules
+2. Add a watchdog for stuck AI queue items
+3. Remove all blocking popups from the side panel
+4. Extract pure utilities and start writing tests
+5. Add a debug/diagnostics panel
+6. Create a separate selector registry for easier DOM change updates
 
-## บทสรุป
+## Conclusion
 
-จุดแข็งของ codebase นี้คือมี workflow ครบจริง ไม่ได้หยุดแค่การ scrape หรือ generate text แต่ไปถึง queue, drafts, results, quote flow และ settings control แล้ว
+The strength of this codebase is that it has a complete workflow — not just scrape or text generation, but extending through queue, drafts, results, quote flow, and settings control.
 
-จุดอ่อนหลักไม่ใช่ logic พื้นฐาน แต่เป็นความเปราะของ browser automation, การรวมความรับผิดชอบไว้ในไฟล์ใหญ่, และการขาดเครื่องมือ test/diagnostics สำหรับจับ regression
+The main weakness is not in the fundamental logic but in the fragility of browser automation, the concentration of responsibilities in a single large file, and the lack of test/diagnostics tooling for catching regressions.
 
-ถ้าจะพัฒนาต่อ โปรเจกต์นี้ควรขยับจาก “ทำให้ใช้งานได้” ไปสู่ “ทำให้ recoverable, observable, และ maintainable”
+To continue developing, this project should move from "make it work" to "make it recoverable, observable, and maintainable."
+
+## Conclusion
+
+The strength of this codebase is that the workflow is genuinely complete — it goes beyond scraping or generating text, all the way through queue, drafts, results, quote flow, and settings control.
+
+The main weakness is not fundamental logic but rather the fragility of browser automation, concentrating too many responsibilities in large files, and the lack of test/diagnostics tooling to catch regressions.
+
+To continue developing, this project should move from "make it work" to "make it recoverable, observable, and maintainable."

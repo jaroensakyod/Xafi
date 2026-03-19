@@ -1,135 +1,135 @@
 # 2026-03-19 Full Auto Stability Notes
 
-เอกสารนี้สรุปการแก้ปัญหารอบล่าสุดของ `Xaffi Auto` หลังจากเริ่มมีการใช้งาน Full Auto แบบต่อเนื่องจริง และเจออาการค้าง/วนซ้ำใน runtime มากกว่าที่เห็นจาก static review ปกติ
+This document summarizes the latest round of fixes for `Xaffi Auto` after sustained real-world Full Auto usage revealed stalling/looping issues at runtime that were not apparent from normal static review.
 
-## เป้าหมายของรอบนี้
+## Goals of This Round
 
-ทำให้ Full Auto วิ่งตามลำดับนี้ได้เสถียรขึ้น:
+Stabilize Full Auto so it can reliably run through the following sequence:
 
-1. ค้นหาโพสต์บน X
-2. เก็บโพสต์เข้า `Found`
-3. ส่งเข้า `Queue`
-4. สร้าง `Draft`
-5. เข้า `Auto Quote`
+1. Search for posts on X
+2. Collect posts into `Found`
+3. Send them to `Queue`
+4. Generate a `Draft`
+5. Enter `Auto Quote`
 
-พร้อมทั้งทำให้ผู้ใช้มีปุ่ม recovery เมื่อ state ของ AI ค้าง
+Additionally, provide the operator with a recovery button when AI state becomes stuck.
 
-## อาการที่พบจริง
+## Issues Encountered
 
-### 1. X เปิดที่ Latest แทน Top
+### 1. X Opens on Latest Instead of Top
 
-ผลกระทบ:
+Impact:
 
-- ได้ลำดับโพสต์ไม่ตรงกับที่ operator คาดหวัง
-- Full Auto เหมือนวิ่งไปอีกหน้าหนึ่งจากที่ตั้งใจ
+- Post ordering does not match operator expectations
+- Full Auto appears to be running on a different page than intended
 
-การแก้:
+Fix:
 
-- ตัด `f=live` ออกจาก search URL
-- เพิ่ม logic ตรวจว่า search page ต้องไม่ใช่ `Latest`
+- Removed `f=live` from the search URL
+- Added logic to verify the search page is not set to `Latest`
 
-## 2. search page เปิดแล้ว แต่ไม่พิมพ์ค้นหาจริง
+## 2. Search Page Opens but Does Not Actually Execute the Search
 
-ผลกระทบ:
+Impact:
 
-- เหมือนแค่เข้า URL แต่ไม่ trigger flow ค้นหาของ X แบบเต็ม
-- บางรอบหน้า search ไม่ update ตาม query ใหม่
+- The URL is loaded but the full X search flow is not triggered
+- In some cycles, the search page does not update with the new query
 
-การแก้:
+Fix:
 
-- ให้ campaign mode พิมพ์ query จริง
-- กด Enter จริงก่อน fallback เป็น form submit หรือ direct URL
+- Campaign mode now types the query directly
+- Presses Enter before falling back to form submit or direct URL navigation
 
-## 3. เจอโพสต์แล้วแต่ไม่ถูกเก็บต่อเป็น Found/Queue ตามหัวข้อ
+## 3. Posts Found but Not Saved to Found/Queue with Topic Context
 
-ผลกระทบ:
+Impact:
 
-- Found ไม่รู้ว่าโพสต์นี้มาจาก topic ไหน
-- Queue และ Draft ขาด context ของ campaign/topic
+- Found entries have no information about which topic the post belongs to
+- Queue and Draft entries lack campaign/topic context
 
-การแก้:
+Fix:
 
-- ใส่ `campaignId`, `topicId`, `topic`, `productName`, `productLink` ตั้งแต่ตอน save Found post
-- ใช้ข้อมูลชุดเดียวกันต่อไปถึง queue/draft/quote
+- Attach `campaignId`, `topicId`, `topic`, `productName`, `productLink` at the time of saving a Found post
+- Carry the same data set through to queue/draft/quote
 
-## 4. เจอโพสต์แล้วแต่เก็บไม่ครบ target ของหัวข้อ
+## 4. Posts Found but Not Reaching the Topic's Target Count
 
-ผลกระทบ:
+Impact:
 
-- campaign ดูเหมือนวิ่ง แต่ยอด `foundCount` ไม่ครบตามเป้าหมาย
-- บางหัวข้อถูกสลับออกเร็วเกินไปหรือไม่กลับมาเก็บต่อ
+- The campaign appears to be running but `foundCount` does not reach the target
+- Some topics are switched away too early or never revisited
 
-การแก้:
+Fix:
 
-- เพิ่ม `foundCount` tracking ต่อ topic
-- ใช้ `foundCount` แทน `generatedCount` ใน collect phase
-- ปรับการสลับหัวข้อให้ตรงกับ `round-robin` และ `drain-topic`
+- Added per-topic `foundCount` tracking
+- Use `foundCount` instead of `generatedCount` during the collect phase
+- Adjusted topic switching to align with `round-robin` and `drain-topic` modes
 
-## 5. ไปหัวข้อถัดไปแล้วค้าง หรือ reload วน
+## 5. Stalling or Reload Loop When Moving to the Next Topic
 
-ผลกระทบ:
+Impact:
 
-- X ถูก reload ซ้ำ
-- หัวข้อถัดไปไม่เริ่มจริง
-- campaign เหมือนอยู่ในสถานะวิ่งแต่ไม่คืบหน้า
+- X gets reloaded repeatedly
+- The next topic never actually starts
+- The campaign appears to be running but makes no progress
 
-การแก้:
+Fix:
 
-- เพิ่ม heartbeat logic ใน `autoScoutProgress`
-- แยก `requestedAt` ออกจาก `lastUpdated`
-- ไม่ถือว่า scout healthy เพียงเพราะ background เพิ่งสั่งเริ่ม
-- เพิ่ม guard ไม่ให้ `campaign.tick` re-activate scout ซ้ำเมื่อหัวข้อเดิมยัง healthy อยู่
+- Added heartbeat logic in `autoScoutProgress`
+- Separated `requestedAt` from `lastUpdated`
+- Do not consider scout healthy simply because the background just issued a start command
+- Added a guard to prevent `campaign.tick` from re-activating the scout when the current topic is still healthy
 
-## 6. ค้นหาไม่เจอหรือถึง limit แล้ววนซ้ำ
+## 6. No Results Found or Limit Reached Causing Reload Loop
 
-ผลกระทบ:
+Impact:
 
-- ระบบ reload หัวข้อเดิมต่อ
-- campaign ไม่ข้ามหัวข้อหรือหยุดอย่างมีเหตุผล
+- The system keeps reloading the same topic
+- The campaign does not skip topics or stop gracefully
 
-การแก้:
+Fix:
 
-- ถ้าไม่พบผลลัพธ์ต่อเนื่อง จะส่ง `AUTO_SCOUT_NO_RESULTS` กลับ background
-- topic นั้นจะถูก mark เป็นข้าม/ผิดพลาด แล้วไปหัวข้อถัดไป
-- ถ้าชน `session limit` หรือ `daily limit` ระหว่าง collect phase จะ pause campaign แทนการวนใหม่
+- If no results are found consecutively, send `AUTO_SCOUT_NO_RESULTS` back to background
+- The topic is marked as skipped/errored and the system moves to the next topic
+- If a `session limit` or `daily limit` is hit during the collect phase, the campaign is paused instead of looping
 
-## 7. AI busy state ค้าง และเริ่มงานใหม่ไม่ได้
+## 7. AI Busy State Gets Stuck, Preventing New Work
 
-อาการที่ operator เจอ:
+Symptoms the operator encounters:
 
-- alert ว่า `AI กำลังทำงานอยู่ กรุณารอให้เสร็จก่อน`
-- แต่ในความเป็นจริง queue หรือ popup อาจค้างไปแล้ว
+- An alert saying "AI is currently working, please wait for it to finish"
+- But in reality, the queue or popup may already be stuck
 
-การแก้:
+Fix:
 
-- เพิ่มคำสั่ง `FORCE_STOP_AI` ใน background
-- เพิ่มปุ่ม `⛔ บังคับหยุด AI` ใน side panel
-- คำสั่งนี้จะ:
-  - เคลียร์ `pendingPrompt`
-  - ล้าง in-memory AI queue
-  - reset `isProcessingAIQueue`
-  - ปิดหน้าต่าง AI popup
-  - mark queue item ที่กำลัง `processing` เป็น `error`
-  - pause campaign ถ้าค้างอยู่ใน phase `generating`
+- Added a `FORCE_STOP_AI` command in background
+- Added a "⛔ Force Stop AI" button in the side panel
+- This command will:
+  - Clear `pendingPrompt`
+  - Flush the in-memory AI queue
+  - Reset `isProcessingAIQueue`
+  - Close the AI popup window
+  - Mark the currently `processing` queue item as `error`
+  - Pause the campaign if stuck in the `generating` phase
 
-## สรุปเชิงสถาปัตยกรรม
+## Architecture Summary
 
-รอบนี้ไม่ได้เพิ่ม feature ใหม่เป็นหลัก แต่เป็นการทำให้ state machine ของ Full Auto กับ AI queue สะท้อน runtime จริงมากขึ้น โดยเฉพาะ:
+This round did not primarily add new features. Instead, it focused on making the Full Auto and AI queue state machines reflect actual runtime behavior more accurately, specifically:
 
-- collect phase ใช้ `Found -> Queue` จริง
-- topic progress ใช้ตัวนับที่ถูกกับ phase
-- search flow บน X ไม่อิงแค่ URL
-- มี recovery path สำหรับ operator เมื่อ AI ค้าง
+- The collect phase genuinely uses the `Found -> Queue` pipeline
+- Topic progress uses counters appropriate to each phase
+- The search flow on X does not rely solely on URL navigation
+- There is a recovery path for operators when AI becomes stuck
 
-## ข้อจำกัดที่ยังเหลือ
+## Remaining Limitations
 
-- selector ของ X search/results ยังเปราะต่อการเปลี่ยน UI
-- AI provider ยังพึ่ง DOM มาก
-- ยังไม่มี automated test สำหรับ campaign runtime
-- การยืนยันผลลัพธ์ที่ดีที่สุดยังต้องทำผ่าน live browser run
+- X search/results selectors are still fragile to UI changes
+- AI providers still rely heavily on DOM
+- No automated tests exist for campaign runtime
+- The best way to verify results is still through live browser runs
 
-## ข้อแนะนำก่อนใช้งานจริง
+## Recommendations Before Production Use
 
-1. เริ่มทดสอบด้วย campaign เล็กก่อน เช่น 2 หัวข้อ หัวข้อละ 1-2 โพสต์
-2. ถ้าเจอ AI ค้าง ให้ใช้ `บังคับหยุด AI` ก่อนเริ่มใหม่
-3. ถ้า X เปลี่ยน DOM ของ search page ควรทดสอบ `Top`, การพิมพ์ query, และ no-results behavior ใหม่ทันที
+1. Start testing with a small campaign first, e.g., 2 topics with 1-2 posts each
+2. If AI becomes stuck, use "Force Stop AI" before restarting
+3. If X changes the search page DOM, immediately re-test `Top` tab navigation, query typing, and no-results behavior

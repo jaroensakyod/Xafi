@@ -1,115 +1,115 @@
 // =============================================
 // X Viral Repurpose - Background Service Worker
 // =============================================
-// ตัวกลาง (Coordinator) สื่อสารระหว่าง:
+// Coordinator: routes messages between
 //   content_x.js (x.com) <-> background.js <-> content_ai.js (AI provider page)
 //   sidepanel.js <-> background.js
 // =============================================
 
-// --- ค่าคงที่ ---
+// --- Constants ---
 const PROMPT_TEMPLATE_VERSION = 6;
-const LEGACY_FIXED_CHAR_PROMPT_PATTERN = /247\s*ตัวอักษร/;
+const LEGACY_FIXED_CHAR_PROMPT_PATTERN = /247\s*characters/;
 
-const LEGACY_DEFAULT_PROMPT_TEMPLATE = `สรุปเนื้อหาด้านล่างให้เป็นโพสต์ X (ทวิตเตอร์) สไตล์เพื่อนเล่าแบบชิล ๆ ภาษาพูดธรรมชาติ ห้ามทางการ ห้ามสุภาพเกิน
+const LEGACY_DEFAULT_PROMPT_TEMPLATE = `Summarize the content below into an X (Twitter) post in a casual friend-telling-friend style. Keep it natural and conversational — no formal language.
 
-โครงสร้างบังคับเป๊ะ ๆ ดังนี้เท่านั้น:
-1. บรรทัดแรก: ประโยคเปิดหัว 1 ประโยค ชวนสงสัย ดึงดูด อยากอ่านต่อ (สั้น ไม่เกิน 10 คำ)
-2. เนื้อหาหลัก: ใช้ "-" นำหน้า แต่ละข้อสั้นกระชับมาก 2 ข้อ (บรรทัดละไม่เกิน 1-2 ประโยคสั้น ๆ)
-3. บรรทัดสุดท้าย: ประโยคปิดท้าย 1 ประโยค เชื่อมโยงกลับประเด็นหลักของเนื้อหาต้นทาง แบบสรุปชิล ๆ (สั้น ไม่เกิน 10 คำ)
+Strict structure:
+1. Line 1: One short opening sentence — intriguing, attention-grabbing, makes you want to read more (max 10 words)
+2. Body: Use "-" bullets, 2 concise points (each bullet max 1-2 short sentences)
+3. Last line: One closing sentence that ties back to the main point of the source content, in a chill summary style (max 10 words)
 
-กฎสำคัญที่ต้องทำตามทุกครั้ง:
-- ภาษาแบบเพื่อนคุยกันจริง ๆ (ว่ะ เออ 555 อะไรแบบนี้ใส่ได้ถ้าพอดีกับ mood)
-- ห้ามใส่ hashtag, @, ลิงก์ใด ๆ ในข้อความที่สร้าง
-- ข้อความทั้งหมดที่ AI สร้าง (รวมช่องว่าง การขึ้นบรรทัดใหม่ เครื่องหมายทุกตัว) ต้องยาวพอดีกับจำนวนตัวอักษรที่ระบบกำหนด (ไม่รวมลิงก์ที่ระบบจะต่อท้าย)
-- เมื่อรวมกับลิงก์สินค้า {PRODUCT_URL} แล้ว ต้องครบ 280 ตัวอักษรเป๊ะ (รวมทุกอย่างทั้งลิงก์)
-- ถ้ามีจังหวะเนียน ๆ สามารถแทรก สินค้า แบบไม่ยัดเยียด แต่ห้ามขายของแรง
-- ตอบเฉพาะข้อความโพสต์ที่สร้างเสร็จ ไม่มีคำอธิบาย ไม่มี markdown ไม่มี code block ไม่มีข้อความใด ๆ เพิ่มเติม
+Mandatory rules:
+- Write like a real person talking to a friend — keep it natural and human
+- Do NOT include hashtags, @mentions, or any links in the generated text
+- The total AI-generated text (including spaces, line breaks, and all punctuation) must match the exact character count specified by the system (excluding the product link appended by the system)
+- When combined with the product link {PRODUCT_URL}, the total must be exactly 280 characters (including everything)
+- If there is a natural opening, you may weave in the product subtly — no hard selling
+- Reply with ONLY the final post text — no explanations, no markdown, no code blocks, no extra text
 
-เนื้อหาต้นทาง:
+Source content:
 {CONTENT}`;
 
-const V4_DEFAULT_PROMPT_TEMPLATE = `หน้าที่ของคุณคือเขียนโพสต์ X ภาษาไทยให้ดูเหมือนคนจริงเขียนเอง จากเนื้อหาต้นทางด้านล่าง
+const V4_DEFAULT_PROMPT_TEMPLATE = `Your job is to write an X post that reads like a real person wrote it, based on the source content below.
 
-โทนที่ต้องได้:
-- ภาษาพูดธรรมชาติ แบบคนเล่าให้เพื่อนฟัง
-- ลื่น อ่านง่าย ไม่ดูเป็น AI ไม่ดูเขียนตามสูตรแข็ง ๆ
-- เก็บใจความสำคัญจากต้นทางให้ครบ แต่ห้ามเดาข้อมูลเพิ่ม
+Required tone:
+- Natural conversational language, like telling a friend about something
+- Smooth, easy to read — must not sound like AI or follow a rigid formula
+- Capture key points from the source accurately — do NOT fabricate information
 
-รูปแบบบังคับ:
-บรรทัด 1 = ประโยคเปิดสั้น ๆ ชวนอยากอ่านต่อ
-บรรทัด 2 = bullet ข้อแรก ต้องขึ้นต้นด้วย "- "
-บรรทัด 3 = bullet ข้อสอง ต้องขึ้นต้นด้วย "- "
-บรรทัด 4 = ประโยคปิดสั้น ๆ ที่โยงกลับประเด็นหลัก
+Required format:
+Line 1 = Short opening sentence that hooks the reader
+Line 2 = First bullet, must start with "- "
+Line 3 = Second bullet, must start with "- "
+Line 4 = Short closing sentence that ties back to the main point
 
-กฎที่ต้องทำตามทุกครั้ง:
-- ตอบออกมาเป็น 4 บรรทัดที่มีข้อความจริงเท่านั้น ห้ามมีบรรทัดเกินหรือบรรทัดว่าง
-- ห้ามมีคำนำประเภท "นี่คือโพสต์" "สรุปให้แล้ว" หรือคำอธิบายใด ๆ
-- ห้ามใช้ hashtag, @, ลิงก์, markdown, code block หรือเครื่องหมายอัญประกาศครอบทั้งโพสต์
-- เลี่ยงการคัดลอกถ้อยคำจากต้นทางตรง ๆ ถ้าเขียนใหม่ให้เนียนกว่าได้ ให้เขียนใหม่
-- แต่ละ bullet ต้องสั้น กระชับ และมีแค่ประเด็นเดียว
-- ถ้าข้อมูลต้นทางบาง ให้เขียนเท่าที่รู้จริง ห้ามเติม fact ใหม่
+Mandatory rules:
+- Output exactly 4 lines of actual text only — no extra lines, no blank lines
+- No preamble like "Here is the post" or "Summary:" or any explanation
+- Do NOT use hashtags, @mentions, links, markdown, code blocks, or quotes wrapping the entire post
+- Avoid copying phrases from the source verbatim — rephrase if you can make it smoother
+- Each bullet must be short, concise, and cover only one point
+- If the source material is thin, write only what you actually know — do NOT add new facts
 
 {PRODUCT_CONTEXT}
 
-เนื้อหาต้นทาง:
+Source content:
 {CONTENT}`;
 
-const DEFAULT_PROMPT_TEMPLATE = `หน้าที่ของคุณคือเขียนโพสต์ X ภาษาไทยให้เหมือนคนเล่น X จริง ๆ เขียนเอง จากเนื้อหาต้นทางด้านล่าง
+const DEFAULT_PROMPT_TEMPLATE = `Your job is to write an X post that reads like a real X user wrote it themselves, based on the source content below.
 
-โทนที่ต้องได้:
-- ภาษาพูดธรรมชาติ ตรง กระชับ มีจังหวะเหมือนคนเล่าให้เพื่อนฟัง
-- อ่านแล้วรู้สึกมีมุมคิดหรือมุมเล่า ไม่ใช่แค่สรุปข้อมูลทื่อ ๆ
-- ฟีลแบบโพสต์บน X ไทยที่อ่านลื่น แชร์ต่อได้ แต่ไม่เวอร์ ไม่ประดิษฐ์
-- เก็บเฉพาะประเด็นที่มีน้ำหนักจากต้นทาง ห้ามเดาข้อมูลเพิ่ม
+Required tone:
+- Natural conversational language — direct, concise, with rhythm like telling a friend
+- Should feel like it has a perspective or angle, not just a flat summary
+- Feels like a real X post that reads smoothly and is shareable — not over-the-top or artificial
+- Keep only the points that carry weight from the source — do NOT fabricate information
 
-รูปแบบบังคับ:
-บรรทัด 1 = ประโยคเปิดสั้น ๆ ที่มีแรงดึงให้อยากอ่านต่อ
-บรรทัด 2 = bullet ข้อแรก ต้องขึ้นต้นด้วย "- "
-บรรทัด 3 = bullet ข้อสอง ต้องขึ้นต้นด้วย "- "
-บรรทัด 4 = ประโยคปิดสั้น ๆ ที่ทิ้งน้ำหนักหรือโยงกลับประเด็นหลัก
+Required format:
+Line 1 = Short opening sentence with enough pull to make you want to read on
+Line 2 = First bullet, must start with "- "
+Line 3 = Second bullet, must start with "- "
+Line 4 = Short closing sentence that leaves weight or ties back to the main point
 
-กฎที่ต้องทำตามทุกครั้ง:
-- ตอบออกมาเป็น 4 บรรทัดที่มีข้อความจริงเท่านั้น ห้ามมีบรรทัดเกินหรือบรรทัดว่าง
-- ห้ามมีคำนำประเภท "นี่คือโพสต์" "สรุปให้แล้ว" หรือคำอธิบายใด ๆ
-- ห้ามใช้ hashtag, @, ลิงก์, markdown, code block หรือเครื่องหมายอัญประกาศครอบทั้งโพสต์
-- เลี่ยงการคัดลอกถ้อยคำจากต้นทางตรง ๆ ถ้าเรียบเรียงใหม่ให้เนียนกว่าได้ ให้เรียบเรียงใหม่
-- แต่ละ bullet ต้องสั้น กระชับ และมีแค่ประเด็นเดียว
-- ถ้าข้อมูลต้นทางบาง ให้เขียนเท่าที่รู้จริง ห้ามเติม fact ใหม่
-- ถ้าเนื้อหาต้นทางแรงอยู่แล้ว ให้รักษาน้ำหนักนั้นได้ แต่ห้ามดูเหมือน bait เกินจริง
-- หลีกเลี่ยงโทนขายของ โทน PR หรือภาษาที่ดูเหมือนแคปชันโฆษณา
+Mandatory rules:
+- Output exactly 4 lines of actual text only — no extra lines, no blank lines
+- No preamble like "Here is the post" or "Summary:" or any explanation
+- Do NOT use hashtags, @mentions, links, markdown, code blocks, or quotes wrapping the entire post
+- Avoid copying phrases from the source verbatim — rephrase if you can make it smoother
+- Each bullet must be short, concise, and cover only one point
+- If the source material is thin, write only what you actually know — do NOT add new facts
+- If the source content already hits hard, keep that energy — but do NOT make it look like exaggerated bait
+- Avoid sales tone, PR voice, or language that sounds like ad copy
 
 {PRODUCT_CONTEXT}
 
-เนื้อหาต้นทาง:
+Source content:
 {CONTENT}`;
 
-const HOT_TAKE_PROMPT_TEMPLATE = `หน้าที่ของคุณคือเขียนโพสต์ X ภาษาไทยให้เหมือนคนเล่น X จริง ๆ เขียนเอง จากเนื้อหาต้นทางด้านล่าง
+const HOT_TAKE_PROMPT_TEMPLATE = `Your job is to write an X post that reads like a real X user wrote it themselves, based on the source content below.
 
-โทนที่ต้องได้:
-- ภาษาพูดธรรมชาติ ตรง คม และมีน้ำหนักแบบคนมีมุมมองชัด
-- อ่านแล้วต้องรู้สึกว่าโพสต์นี้มีประเด็น ไม่ใช่แค่สรุปข่าวเฉย ๆ
-- ฟีลแบบโพสต์ X ไทยที่ชวนคิด ชวนเถียงเบา ๆ หรือชวนแชร์ต่อได้ แต่ห้ามเวอร์ ห้ามเฟก
-- เก็บเฉพาะประเด็นที่มีน้ำหนักจากต้นทาง ห้ามเดาข้อมูลเพิ่ม
+Required tone:
+- Natural conversational language — direct, sharp, and with clear conviction
+- Must feel like this post has a real point — not just a news summary
+- Feels like an X post that makes you think, sparks mild debate, or gets shared — no exaggeration, no fakeness
+- Keep only the points that carry weight from the source — do NOT fabricate information
 
-รูปแบบบังคับ:
-บรรทัด 1 = ประโยคเปิดสั้น ๆ ที่แรงพอให้หยุดอ่าน
-บรรทัด 2 = bullet ข้อแรก ต้องขึ้นต้นด้วย "- "
-บรรทัด 3 = bullet ข้อสอง ต้องขึ้นต้นด้วย "- "
-บรรทัด 4 = ประโยคปิดสั้น ๆ ที่ทิ้งน้ำหนักหรือโยนมุมคิดกลับไปที่ประเด็นหลัก
+Required format:
+Line 1 = Short opening sentence strong enough to make you stop scrolling
+Line 2 = First bullet, must start with "- "
+Line 3 = Second bullet, must start with "- "
+Line 4 = Short closing sentence that leaves weight or throws a perspective back at the main point
 
-กฎที่ต้องทำตามทุกครั้ง:
-- ตอบออกมาเป็น 4 บรรทัดที่มีข้อความจริงเท่านั้น ห้ามมีบรรทัดเกินหรือบรรทัดว่าง
-- ห้ามมีคำนำประเภท "นี่คือโพสต์" "สรุปให้แล้ว" หรือคำอธิบายใด ๆ
-- ห้ามใช้ hashtag, @, ลิงก์, markdown, code block หรือเครื่องหมายอัญประกาศครอบทั้งโพสต์
-- เลี่ยงการคัดลอกถ้อยคำจากต้นทางตรง ๆ ถ้าเรียบเรียงใหม่ให้คมกว่าได้ ให้เรียบเรียงใหม่
-- แต่ละ bullet ต้องสั้น กระชับ และมีแค่ประเด็นเดียว
-- ถ้าข้อมูลต้นทางบาง ให้เขียนเท่าที่รู้จริง ห้ามเติม fact ใหม่
-- เปิดได้แรงขึ้นกว่าปกติ แต่ห้าม clickbait และห้ามใส่อารมณ์เกินข้อมูลต้นทาง
-- หลีกเลี่ยงโทนขายของ โทน PR หรือภาษาที่ดูเหมือนแคปชันโฆษณา
+Mandatory rules:
+- Output exactly 4 lines of actual text only — no extra lines, no blank lines
+- No preamble like "Here is the post" or "Summary:" or any explanation
+- Do NOT use hashtags, @mentions, links, markdown, code blocks, or quotes wrapping the entire post
+- Avoid copying phrases from the source verbatim — rephrase if you can make it sharper
+- Each bullet must be short, concise, and cover only one point
+- If the source material is thin, write only what you actually know — do NOT add new facts
+- You can open stronger than usual — but no clickbait and no emotion beyond what the source supports
+- Avoid sales tone, PR voice, or language that sounds like ad copy
 
 {PRODUCT_CONTEXT}
 
-เนื้อหาต้นทาง:
+Source content:
 {CONTENT}`;
 
 const DEFAULT_SETTINGS = {
@@ -296,13 +296,13 @@ function assertFullAutoSource(payload) {
 }
 
 // =============================================
-// 1) เปิด Side Panel เมื่อกดไอคอน Extension
+// 1) Open Side Panel on Extension icon click
 // =============================================
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
     .catch(console.error);
 
 // =============================================
-// 2) เริ่มต้นระบบ - โหลด Settings
+// 2) System init - Load Settings
 // =============================================
 chrome.runtime.onInstalled.addListener(async () => {
     const { settings, autoScoutEnabled, autoScoutQuery: storedQuery, contextProduct: storedProduct, productLink: storedProductLink, trendsCountry: storedTrendsCountry, results, googleTrends, autoQuoteState } = await chrome.storage.local.get(['settings', 'autoScoutEnabled', 'autoScoutQuery', 'contextProduct', 'productLink', 'trendsCountry', 'results', 'googleTrends', 'autoQuoteState']);
@@ -329,7 +329,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 loadAutoScoutState().catch(console.error);
 
 // =============================================
-// 3) Message Router - รับ-ส่งข้อความระหว่างทุกส่วน
+// 3) Message Router - dispatch messages between all parts
 // =============================================
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleMessage(message, sender).then(sendResponse).catch(err => {
@@ -342,7 +342,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleMessage(message, sender) {
     switch (message.type) {
 
-        // --- จาก content_x.js ---
+        // --- from content_x.js ---
         case 'VIRAL_POST_FOUND':
             return await saveViralPost(message.data);
 
@@ -373,7 +373,7 @@ async function handleMessage(message, sender) {
             }
             return { success: true };
 
-        // --- จาก content_ai.js ---
+        // --- from content_ai.js ---
         case 'AI_PAGE_READY':
             return await onAIPageReady(sender.tab?.id || null);
 
@@ -394,7 +394,7 @@ async function handleMessage(message, sender) {
             }, 3000);
             return { success: true };
 
-        // --- จาก sidepanel.js ---
+        // --- from sidepanel.js ---
         case 'GET_AUTO_SCOUT_STATE':
             await loadAutoScoutState();
             return { success: true, data: { enabled: isAutoScoutEnabled, query: autoScoutQuery, product: contextProduct, productLink, trendsCountry, progress: autoScoutProgress } };
@@ -515,7 +515,7 @@ async function handleMessage(message, sender) {
             return await postToX(message.data);
 
         case 'START_AUTO_QUOTE':
-            // รอรับคำสั่ง Auto Quote
+            // Wait for Auto Quote commands
             return await startAutoQuoteLoop();
 
         case 'STOP_AUTO_QUOTE':
@@ -578,7 +578,7 @@ async function saveViralPost(post) {
 
     const { viralPosts = [] } = await chrome.storage.local.get('viralPosts');
 
-    // เช็คซ้ำ (ดูจาก URL)
+    // De-duplicate check (by URL)
     if (viralPosts.some(p => p.url === post.url)) {
         return { success: true, duplicate: true };
     }
@@ -595,7 +595,7 @@ async function saveViralPost(post) {
     };
     viralPosts.unshift(enrichedPost);
 
-    // เก็บสูงสุด 100 โพสต์
+    // Keep max 100 posts
     if (viralPosts.length > 100) viralPosts.length = 100;
 
     await chrome.storage.local.set({ viralPosts });
@@ -691,7 +691,7 @@ async function clearAllViral() {
 }
 
 // =============================================
-// 5) AI Processing - เปิดหน้าต่าง AI provider แบบครึ่งจอ
+// 5) AI Processing - open AI provider window (half-screen)
 // =============================================
 let pendingPrompt = null;
 let aiProcessQueue = [];
@@ -828,7 +828,7 @@ async function startAIProcessing(data) {
 
     await broadcastStatus('processing', `Opening ${aiProvider.label}...`);
 
-    // เช็คว่ามีหน้าต่าง AI provider ที่ตรงกับที่เลือกไว้เปิดอยู่หรือไม่
+    // Check if an existing AI provider window matches the selected provider
     if (aiWindowId) {
         try {
             await chrome.windows.get(aiWindowId);
@@ -846,7 +846,7 @@ async function startAIProcessing(data) {
         }
     }
 
-    // เปิดหน้าต่างใหม่แบบ Popup (ครึ่งจอขวา)
+    // Open new popup window (right half of screen)
     try {
         const currentWindow = await chrome.windows.getCurrent();
         const popupWidth = Math.floor(currentWindow.width * 0.45);
@@ -963,7 +963,7 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// เมื่อหน้า grok.com โหลดเสร็จ content_ai.js จะแจ้งมา
+// When grok.com page loads, content_ai.js notifies us
 async function onAIPageReady(tabId = null) {
     if (!pendingPrompt) return { success: false, error: 'No pending prompt' };
 
@@ -1010,7 +1010,7 @@ async function forceStopAiProcessing() {
     return { success: true };
 }
 
-// เมื่อ AI ตอบเสร็จ
+// When AI response is ready
 async function onAIResponseReady(data) {
     if (!pendingPrompt) {
         return { success: false, ignored: true, error: 'No pending prompt' };
@@ -1070,7 +1070,7 @@ async function onAIResponseReady(data) {
     drafts.unshift(draft);
     results.unshift(resultItem);
 
-    // เก็บสูงสุด 50 drafts
+    // Keep max 50 drafts
     if (drafts.length > 50) drafts.length = 50;
     if (results.length > 100) results.length = 100;
 
@@ -1094,16 +1094,16 @@ async function onAIResponseReady(data) {
 
     await broadcastStatus('done', `AI generation complete! (queue: ${aiProcessQueue.length})`);
 
-    // โหลดหน้า Results อัตโนมัติ (เฉพาะเวลากดทีละอัน หรือทำคิวสุดท้ายเสร็จ)
+    // Auto-open Results page (only for single item or last queue item)
     if (aiProcessQueue.length === 0) {
         await openResultsPage(draft.id);
     } else {
-        // ให้มัน Update ให้ Side panel รู้
+        // Notify side panel about updated drafts
         const tabs = await chrome.tabs.query({});
         tabs.forEach(tab => chrome.tabs.sendMessage(tab.id, { type: 'DRAFTS_UPDATED' }).catch(() => { }));
     }
 
-    // ไปเริ่มคิวต่อไป (ถ้ามี)
+    // Continue to next queue item (if any)
     setTimeout(() => {
         startAIQueue();
     }, 2000);
@@ -1271,7 +1271,7 @@ async function clearAllDrafts() {
 }
 
 // =============================================
-// 7) Post to X - ส่งข้อความไปพิมพ์ในช่อง Compose ของ X
+// 7) Post to X - type text in X compose box
 // =============================================
 async function postToX(data) {
     const { drafts = [] } = await chrome.storage.local.get('drafts');
@@ -1288,7 +1288,7 @@ async function postToX(data) {
         postStartedAt: new Date().toISOString()
     });
 
-    // หา tab ของ x.com ที่เปิดอยู่
+    // Find open x.com tab
     const tabs = await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] });
     const sourcePath = sourceUrl ? new URL(sourceUrl).pathname : '';
 
@@ -1303,7 +1303,7 @@ async function postToX(data) {
             || tabs[0];
         targetTabId = preferredTab.id;
 
-        // ถ้านี่คือโพสต์ Quote ให้เช็คว่าอยู่หน้าโพสต์ต้นทางหรือยัง
+        // If this is a Quote post, check if we're on the source post page
         if (sourceUrl) {
             const currentTab = preferredTab;
 
@@ -1323,7 +1323,7 @@ async function postToX(data) {
         await waitForTabComplete(targetTabId, 20000);
     }
 
-    // ส่งข้อความไปให้ content_x.js พิมพ์ในช่อง Compose แล้วกดโพสต์ทันที
+    // Send text to content_x.js to type in the compose box and auto-submit
     await sleep(4500);
 
     try {
@@ -2568,19 +2568,19 @@ function buildPrompt(sourcePost, settings, product) {
     const cleanContent = sanitizeSourceText(sourcePost?.text || '');
     const productUrl = String(sourcePost?.productLink || productLink || '').trim();
     const charBudget = getBodyCharacterBudget(productUrl);
-    const sourceContentContext = '- ใช้เนื้อหาจากทั้งโพสต์ได้ รวมถึงข้อความหลัง hashtag แต่ไม่ต้องคัดลอก hashtag หรือลิงก์จากต้นทางมาใช้ตรงๆ';
-    const outputOnlyContext = '- ตอบกลับเฉพาะข้อความโพสต์สุดท้ายเพียงอย่างเดียว ห้ามมีคำอธิบาย ห้ามมี markdown ห้ามมี code block และห้ามมีข้อความสถานะ เช่น Executed code';
-    const bulletContext = '- ต้องออกมาเป็น 4 บรรทัดเท่านั้น โดยบรรทัด 2 และ 3 ต้องขึ้นต้นด้วย -';
+    const sourceContentContext = '- You may use content from the entire post, including text after hashtags, but do NOT copy hashtags or links from the source directly';
+    const outputOnlyContext = '- Reply with ONLY the final post text — no explanations, no markdown, no code blocks, and no status text such as "Executed code"';
+    const bulletContext = '- Output must be exactly 4 lines, where lines 2 and 3 must start with -';
     const modeContext = promptMode === 'hot-take'
-        ? '- โทนรวมต้องคมขึ้น มีน้ำหนักแบบคนมีมุมชัด แต่ยังดูเป็นธรรมชาติและไม่ใส่อารมณ์เกินข้อมูลจริง'
-        : '- โทนรวมต้องเนียน อ่านลื่น และถ้ามีการขายต้องฟีลเหมือนพูดแทรก ไม่ใช่โหมดปิดการขาย';
+        ? '- Overall tone must be sharper, with clear conviction — but still natural and not emotionally beyond the actual facts'
+        : '- Overall tone must be smooth and readable — if mentioning a product, it should feel like a casual aside, not a sales pitch';
     const productContext = product
-        ? `- ถ้ามีจังหวะที่เหมาะ ค่อยเชื่อมโยงกับสินค้า/บริการนี้เพียง 1 จุดแบบเนียนๆ เหมือนพูดแทรกจากประสบการณ์ตรง ห้าม hard sell ห้ามภาษาโฆษณา: ${product}`
+        ? `- If there is a natural opening, weave in this product/service at just one point — like mentioning it from personal experience. No hard sell, no ad copy: ${product}`
         : '';
     const exactLengthContext = [
-        '- ระบบจะต่อท้ายข้อความด้วยลิงก์สินค้าอัตโนมัติ และจะใช้โพสต์ต้นทางทำ Quote แยกต่างหาก',
-        `- ข้อความที่ AI สร้างได้เองต้องยาว ${charBudget} ตัวอักษรพอดี`,
-        `- เมื่อนำข้อความนี้ไปรวมกับลิงก์สินค้า ${productUrl || '(ไม่มี)'} รวมทั้งทุกตัวอักษร ช่องว่าง เครื่องหมาย ?, -, การขึ้นบรรทัดใหม่ และลิงก์ทั้งหมด ความยาวรวมต้องเท่ากับ ${MAX_POST_LENGTH} ตัวอักษรพอดี`
+        '- The system will automatically append a product link and will use the source post for a separate quote',
+        `- The AI-generated text body must be exactly ${charBudget} characters long`,
+        `- When this text is combined with the product link ${productUrl || '(none)'} including all characters, spaces, punctuation, line breaks, and links, the total length must equal exactly ${MAX_POST_LENGTH} characters`
     ].join('\n');
     const dynamicContext = [sourceContentContext, outputOnlyContext, bulletContext, modeContext, productContext, exactLengthContext]
         .filter(Boolean)
@@ -2588,7 +2588,7 @@ function buildPrompt(sourcePost, settings, product) {
 
     let template = settings?.promptTemplate || DEFAULT_SETTINGS.promptTemplate;
     template = template.replace('{CONTENT}', cleanContent || sourcePost?.text || '');
-    template = template.replace('{PRODUCT_URL}', productUrl || '(ไม่มี)');
+    template = template.replace('{PRODUCT_URL}', productUrl || '(none)');
     template = template.replace('{PRODUCT_CONTEXT}', dynamicContext);
 
     if (!template.includes(sourceContentContext)) template += `\n${sourceContentContext}`;
@@ -2842,10 +2842,10 @@ async function broadcastStatus(status, message) {
             type: 'STATUS_UPDATE',
             data: { status, message, timestamp: Date.now() }
         });
-    } catch { /* Side panel อาจยังไม่เปิด */ }
+    } catch { /* Side panel may not be open yet */ }
 }
 
-// Cleanup เมื่อหน้าต่าง grok.com ถูกปิด
+// Cleanup when grok.com window is closed
 chrome.windows.onRemoved.addListener((windowId) => {
     if (windowId === aiWindowId) {
         aiWindowId = null;

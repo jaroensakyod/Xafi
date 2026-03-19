@@ -1,65 +1,65 @@
 # Full Automate Home Plan
 
-## 1. เป้าหมายรอบนี้
-เปลี่ยนหน้าแรกของโปรแกรมจาก dashboard แบบแยกเครื่องมือ มาเป็นหน้า `Full Automate` ที่ใช้ตั้งงานเป็นชุดเดียวแล้วปล่อยระบบทำงานต่อเนื่องได้
+## 1. Goal for This Round
+Transform the extension's home page from a dashboard with separate tools into a `Full Automate` page where users configure an entire job set and let the system run continuously.
 
-สิ่งที่ต้องรองรับในรอบออกแบบนี้มี 3 ข้อหลัก:
+Three core requirements for this design round:
 
-1. เพิ่มหัวข้อ, สินค้า, และลิงก์ได้หลายหัวข้อ
-2. กำหนดได้ว่าหัวข้อไหนจะหา/สร้างกี่โพสต์ และเลือกได้ว่าจะสลับหัวข้อ หรือทำหัวข้อเดียวให้ครบก่อน
-3. กำหนดลำดับการ Quote ได้ว่าจะเรียงทีละสินค้า หรือสลับสินค้า
+1. Support multiple topics, each with its own product and link
+2. Define how many posts to find/generate per topic and choose between alternating topics or draining one topic before moving to the next
+3. Define quote ordering — sequential per product or alternating across products
 
-เอกสารนี้เป็นแผนก่อนลงมือเขียนโค้ด โดยยึดโครงสร้างจริงของโปรเจกต์ปัจจุบันที่มี `background.js`, `content_x.js`, `content_ai.js`, และ `sidepanel.*` เป็นแกนหลัก
+This document is the pre-implementation plan, grounded in the current project structure built around `background.js`, `content_x.js`, `content_ai.js`, and `sidepanel.*`.
 
-## 2. ปัญหาของหน้าแรกปัจจุบัน
-หน้าแรกใน side panel ตอนนี้ยังเป็นการวาง control หลายชิ้นต่อกัน เช่น query, product, product link, auto scout, tabs, queue, drafts และ auto quote
+## 2. Problems with the Current Home Page
+The current side panel home page is a sequential stack of separate controls: query, product, product link, auto scout, tabs, queue, drafts, and auto quote.
 
-ข้อจำกัดของแนวทางเดิม:
+Limitations of the current approach:
 
-- รองรับบริบทสินค้าได้ครั้งละ 1 ชุดเป็นหลัก
-- queue มองเป็นรายการโพสต์ ไม่ได้มองเป็นแผนงานหลายหัวข้อ
-- ไม่มี orchestration rule ระดับ campaign ว่าจะสลับหัวข้อหรือไล่ทีละหัวข้อ
-- quote flow มองจาก draft ที่มีอยู่แล้ว แต่ยังไม่มี policy ชัดว่าให้กระจายสินค้าอย่างไร
-- หน้าแรกยังเหมาะกับ operator mode มากกว่า full automate mode
+- Supports only one product context at a time
+- The queue treats items as individual posts, not as a multi-topic plan
+- No campaign-level orchestration rules for alternating or draining topics
+- The quote flow picks from existing drafts with no clear product distribution policy
+- The home page is better suited for operator mode than full automate mode
 
-สรุปคือระบบมี automation engine อยู่แล้ว แต่ยังไม่มี `control plane` ที่จัดการงานหลายหัวข้อแบบครบวงจร
+In summary, the automation engine exists but lacks a `control plane` for end-to-end multi-topic job management.
 
-## 3. เป้าหมาย UX ใหม่
-หน้าแรกใหม่จะต้องเป็น `Campaign Builder + Run Control` ไม่ใช่แค่แผงตั้งค่า
+## 3. New UX Goal
+The new home page must function as a `Campaign Builder + Run Control`, not just a settings panel.
 
-ภาพใช้งานที่ต้องได้:
+Target user experience:
 
-1. ผู้ใช้เปิดหน้าแรก
-2. สร้างหลายหัวข้อในหน้าเดียว
-3. แต่ละหัวข้อใส่สินค้าและลิงก์ของตัวเองได้
-4. ระบุจำนวนโพสต์เป้าหมายต่อหัวข้อ
-5. เลือก policy การรันของทั้ง campaign
-6. กดเริ่ม แล้วระบบคิวหาโพสต์, ส่ง AI, สร้าง draft, และจัด quote ตาม policy ที่เลือก
-7. ผู้ใช้เห็นสถานะรวมแบบ campaign และสถานะย่อยแบบต่อหัวข้อ
+1. User opens the home page
+2. Creates multiple topics on a single screen
+3. Each topic has its own product and link
+4. Specifies a target post count per topic
+5. Selects the campaign-level run policy
+6. Presses Start — the system queues source discovery, sends to AI, creates drafts, and schedules quotes according to the chosen policy
+7. User sees both campaign-level status and per-topic status
 
-## 4. แนวคิดข้อมูลหลัก
-แนะนำให้เพิ่มโมเดลข้อมูลระดับ `campaign` และ `topic` แยกจาก queue เดิม
+## 4. Core Data Concepts
+Introduce `campaign` and `topic` data models separate from the existing queue.
 
 ### 4.1 Campaign
-campaign คือชุดงาน full automate 1 รอบ
+A campaign represents one full automate run cycle.
 
-ข้อมูลหลักที่ควรมี:
+Required fields:
 
 - `id`
 - `name`
-- `status` เช่น `draft`, `running`, `paused`, `completed`, `error`
+- `status` — e.g. `draft`, `running`, `paused`, `completed`, `error`
 - `topicExecutionMode`
 - `quoteDistributionMode`
 - `createdAt`
 - `updatedAt`
 - `startedAt`
 - `completedAt`
-- `activeTopicIndex` หรือ pointer สำหรับ policy ที่ต้องสลับหัวข้อ
+- `activeTopicIndex` — pointer for policies that alternate topics
 
 ### 4.2 Topic Item
-แต่ละหัวข้อคือหน่วยย่อยใน campaign
+Each topic is a sub-unit within a campaign.
 
-ข้อมูลหลักที่ควรมี:
+Required fields:
 
 - `id`
 - `topic`
@@ -68,317 +68,317 @@ campaign คือชุดงาน full automate 1 รอบ
 - `targetPostCount`
 - `generatedCount`
 - `quotedCount`
-- `status` เช่น `pending`, `running`, `completed`, `error`
+- `status` — e.g. `pending`, `running`, `completed`, `error`
 - `lastProcessedAt`
 - `lastSourceUrl`
-- `notes` หรือ `errorMessage`
+- `notes` or `errorMessage`
 
 ### 4.3 Execution Queue
-นอกจาก `processQueue` เดิม ควรมีคิวระดับ orchestration ที่บอกว่า next action คืออะไร
+Beyond the existing `processQueue`, add an orchestration-level queue that tracks the next action.
 
-ตัวอย่าง action:
+Example actions:
 
 - `find-source-posts`
 - `generate-draft`
 - `enqueue-quote`
 - `publish-quote`
 
-ถ้าไม่แยกระดับนี้ หน้าแรกใหม่จะมี UI สวยขึ้นแต่ behavior ภายในยังผูกติดกับ queue เดิมมากเกินไป
+Without this separation, the new UI may look better but internal behavior remains overly coupled to the legacy queue.
 
-## 5. โครงสร้างหน้าแรกใหม่
-หน้าแรกควรมี 4 ส่วนหลักในหน้าเดียว
+## 5. New Home Page Structure
+The home page should have four main sections on a single screen.
 
 ### 5.1 Campaign Header
-แสดงข้อมูลระดับภาพรวม
+Displays campaign-level overview data.
 
-- ชื่อ campaign
-- สถานะ campaign
-- จำนวนหัวข้อทั้งหมด
-- เป้าหมายรวมทั้งหมด
-- ทำไปแล้วกี่โพสต์
-- ปุ่ม `เริ่ม`, `พัก`, `ทำต่อ`, `หยุด`
+- Campaign name
+- Campaign status
+- Total number of topics
+- Combined target post count
+- Posts completed so far
+- Buttons: `Start`, `Pause`, `Resume`, `Stop`
 
 ### 5.2 Topic Builder
-เป็นส่วนสำคัญที่สุดของหน้าแรกใหม่
+The most important section of the new home page.
 
-ต่อ 1 แถวหัวข้อควรมี field ดังนี้:
+Each topic row should include these fields:
 
-- `หัวข้อ`
-- `สินค้า`
-- `ลิงก์`
-- `จำนวนโพสต์เป้าหมาย`
-- สถานะปัจจุบัน
-- ปุ่มลบแถว
+- `Topic`
+- `Product`
+- `Link`
+- `Target post count`
+- Current status
+- Delete row button
 
-ต้องมีความสามารถ:
+Required capabilities:
 
-- เพิ่มแถวหัวข้อได้หลายรายการ
-- reorder หัวข้อขึ้น/ลงได้
-- duplicate หัวข้อได้ เผื่อใช้สินค้าเดิมแต่เปลี่ยน target count
-- validate ว่าหัวข้อว่างไม่ได้ และถ้าใส่ลิงก์ต้องเป็น URL ที่ถูกต้อง
+- Add multiple topic rows
+- Reorder topics up/down
+- Duplicate a topic — useful for reusing the same product with a different target count
+- Validate that topics are not empty and that links (if provided) are valid URLs
 
 ### 5.3 Automation Rules
-เป็นส่วนกำหนด policy ของทั้ง campaign
+Defines the campaign-level policies.
 
-ต้องมีอย่างน้อย 2 กลุ่ม rule:
+At minimum, two rule groups are needed:
 
 #### A. Topic Execution Mode
-กำหนดว่าระบบจะวิ่งหัวข้ออย่างไร
+Determines how the system cycles through topics.
 
-ตัวเลือกที่ต้องรองรับ:
+Required options:
 
-- `round-robin`: สลับหัวข้อไปทีละโพสต์ เช่น A1 -> B1 -> C1 -> A2
-- `drain-topic`: ทำหัวข้อเดียวให้ครบก่อน เช่น A1 -> A2 -> A3 -> B1
+- `round-robin`: Alternates topics one post at a time — e.g. A1 -> B1 -> C1 -> A2
+- `drain-topic`: Completes one topic fully before moving on — e.g. A1 -> A2 -> A3 -> B1
 
 #### B. Quote Distribution Mode
-กำหนดว่าตอนเอา draft ไป quote จะจัดลำดับสินค้าอย่างไร
+Determines how drafts are ordered for quoting.
 
-ตัวเลือกที่ต้องรองรับ:
+Required options:
 
-- `sequential-by-product`: เรียงทีละสินค้าจนหมดก่อน
-- `alternate-products`: สลับสินค้า/หัวข้อเพื่อลดการติด pattern เดิม
+- `sequential-by-product`: Quote all posts from one product before moving to the next
+- `alternate-products`: Alternate products/topics to avoid repetitive patterns
 
 ### 5.4 Runtime Monitor
-ส่วนแสดงผลการทำงานจริงแบบ live
+Live display of execution progress.
 
-- ตอนนี้กำลังรันหัวข้ออะไร
-- คิวถัดไปคืออะไร
-- หัวข้อไหนเหลืออีกกี่โพสต์
-- draft ที่สร้างแล้วต่อหัวข้อ
-- quote ที่สำเร็จแล้วต่อหัวข้อ
-- error ล่าสุด
+- Which topic is currently running
+- What is next in the queue
+- How many posts remain per topic
+- Drafts created per topic
+- Quotes completed per topic
+- Most recent error
 
-## 6. กติกาการทำงานที่ต้องนิยามให้ชัด
+## 6. Business Rules That Must Be Clearly Defined
 
-### 6.1 การเพิ่มหลายหัวข้อ
-หนึ่งหัวข้อผูกกับสินค้า 1 ชุดเพื่อให้ prompt และ quote context ชัดเจน
+### 6.1 Adding Multiple Topics
+Each topic is bound to one product to keep prompt and quote context unambiguous.
 
-ข้อเสนอ:
+Recommendation:
 
-- 1 แถว = 1 หัวข้อ + 1 สินค้า + 1 ลิงก์
-- ถ้าผู้ใช้ต้องการหัวข้อเดียวแต่หลายสินค้า ให้เพิ่มหลายแถวโดยใช้หัวข้อซ้ำได้
+- 1 row = 1 topic + 1 product + 1 link
+- If the user wants one topic with multiple products, add multiple rows using the same topic
 
-เหตุผล:
+Rationale:
 
-- data model ตรงกว่า
-- prompt builder ง่ายกว่า
-- quote distribution คุมได้ง่ายกว่า
+- Cleaner data model
+- Simpler prompt builder
+- Easier quote distribution control
 
-### 6.2 การกำหนดจำนวนโพสต์ต่อหัวข้อ
-แต่ละหัวข้อต้องมี `targetPostCount`
+### 6.2 Defining Target Post Count per Topic
+Each topic must have a `targetPostCount`.
 
-กติกาแนะนำ:
+Recommended rules:
 
-- ค่าต่ำสุดคือ 1
-- ถ้าครบ target แล้ว topic เปลี่ยนเป็น `completed`
-- ถ้าแหล่งโพสต์ไม่พอ ให้ค้างที่ `waiting-source` หรือ `partial`
+- Minimum value is 1
+- Once the target is met, the topic transitions to `completed`
+- If source posts are insufficient, the topic stays in `waiting-source` or `partial`
 
-### 6.3 การสลับหัวข้อหรือทำหัวข้อเดียวให้หมดก่อน
-นี่คือ business rule หลักของ campaign
+### 6.3 Alternating Topics vs. Draining One Topic First
+This is the core business rule of the campaign.
 
-นิยามชัดเจน:
+Clear definitions:
 
-- `round-robin`: เลือกหัวข้อถัดไปที่ยังไม่ครบ target และไม่ติด error
-- `drain-topic`: เลือกหัวข้อเดิมซ้ำไปเรื่อย ๆ จนกว่าจะครบ target หรือหา source ไม่ได้
+- `round-robin`: Select the next topic that has not reached its target and is not in error
+- `drain-topic`: Keep selecting the same topic until its target is met or no source can be found
 
-ต้องกัน edge case:
+Edge cases to guard against:
 
-- หัวข้อหนึ่ง error ไม่ควรทำให้ campaign ทั้งก้อนหยุด ถ้าเลือกได้ควรข้ามไปหัวข้อถัดไป
-- ถ้าทุกหัวข้อ error หรือครบหมดแล้ว campaign จึงค่อยปิดรอบ
+- A single topic error should not halt the entire campaign — the system should skip to the next topic if possible
+- The campaign should only close when all topics are either complete or in error
 
-### 6.4 การจัด Quote แบบเรียงทีละสินค้า หรือสลับกัน
-ต้องแยกจากกติกาการ generate draft เพราะบางกรณีผู้ใช้ต้องการ generate แบบสลับหัวข้อ แต่ quote แบบเรียงสินค้า
+### 6.4 Quote Ordering — Sequential per Product vs. Alternating
+This must be defined separately from draft generation rules, because a user may want round-robin generation but sequential quoting.
 
-นิยามชัดเจน:
+Clear definitions:
 
-- `sequential-by-product`: quote งานของสินค้า/หัวข้อเดียวกันให้ครบก่อน แล้วค่อยย้ายไปหัวข้อถัดไป
-- `alternate-products`: quote แบบวนลูปข้ามหัวข้อ เช่น A quote 1 -> B quote 1 -> C quote 1
+- `sequential-by-product`: Complete quoting for one product/topic before moving to the next
+- `alternate-products`: Quote in a round-robin loop across topics — e.g. A quote 1 -> B quote 1 -> C quote 1
 
-ผลดี:
+Benefits:
 
-- ผู้ใช้คุม pattern การเผยแพร่ได้ละเอียดขึ้น
-- ไม่บังคับให้ quote behavior ต้องเหมือน generation behavior
+- Users get finer control over publishing patterns
+- Quote behavior is not forced to mirror generation behavior
 
-## 7. Workflow ใหม่ของระบบ
+## 7. New System Workflow
 
 ### Phase A: Setup Campaign
-1. ผู้ใช้เปิดหน้า `Full Automate`
-2. กรอกชื่อ campaign
-3. เพิ่มหลายหัวข้อ
-4. ระบุ target post count ของแต่ละหัวข้อ
-5. เลือก topic execution mode
-6. เลือก quote distribution mode
-7. กดเริ่มรัน
+1. User opens the `Full Automate` page
+2. Enters a campaign name
+3. Adds multiple topics
+4. Sets the target post count for each topic
+5. Selects the topic execution mode
+6. Selects the quote distribution mode
+7. Presses Start
 
 ### Phase B: Find and Generate
-1. ระบบเลือกหัวข้อถัดไปตาม `topicExecutionMode`
-2. ไปหา source post บน X ตามหัวข้อ
-3. ส่ง context ไป AI พร้อม product name และ product link ของหัวข้อนั้น
-4. บันทึกผลเป็น draft พร้อม tag ว่ามาจาก campaign/topic ไหน
-5. เพิ่มตัวนับ `generatedCount`
-6. ประเมินว่าหัวข้อนั้นครบ target หรือยัง
+1. System selects the next topic according to `topicExecutionMode`
+2. Searches for source posts on X matching the topic
+3. Sends context to AI along with the topic's product name and product link
+4. Saves the result as a draft tagged with its campaign/topic origin
+5. Increments `generatedCount`
+6. Evaluates whether the topic has reached its target
 
 ### Phase C: Quote Scheduling
-1. ระบบหยิบ draft ที่พร้อม quote
-2. จัดลำดับตาม `quoteDistributionMode`
-3. เปิด quote composer
-4. เติมข้อความและ submit ตาม flow เดิม
-5. อัปเดต `quotedCount` ของหัวข้อ
+1. System picks drafts that are ready for quoting
+2. Orders them according to `quoteDistributionMode`
+3. Opens the quote composer
+4. Fills in the text and submits via the existing flow
+5. Updates the topic's `quotedCount`
 
 ### Phase D: Completion
-campaign จะจบเมื่อ:
+A campaign ends when:
 
-- ทุกหัวข้อครบทั้ง generate target ที่กำหนด และ quote ตาม policy ที่เลือกแล้ว
-- หรือผู้ใช้หยุดเอง
-- หรือระบบเจอ error สะสมจนข้ามต่อไม่ได้
+- All topics have met both their generation target and quote policy
+- The user manually stops it
+- Accumulated errors prevent further progress
 
-## 8. ผลกระทบต่อโค้ดเดิม
-รอบนี้ยังไม่ลงมือแก้โค้ด แต่เพื่อให้ implementation ตรงจุด ต้องยอมรับว่าการเปลี่ยนหน้าแรกแบบนี้กระทบมากกว่าการเพิ่ม input field ธรรมดา
+## 8. Impact on Existing Code
+No code changes are made in this round, but to ensure accurate implementation, the scope of impact must be acknowledged — changing the home page is far more than adding a few input fields.
 
-ไฟล์ที่คาดว่าจะได้รับผลกระทบ:
+Files expected to be affected:
 
 ### 8.1 sidepanel.html
-- เปลี่ยนหน้าแรกให้เป็น campaign-oriented layout
-- ลดการยึดติดกับ input เดี่ยว `query/product/link`
-- เพิ่ม topic list builder และ rules panel
+- Redesign the home page with a campaign-oriented layout
+- Move away from single `query/product/link` inputs
+- Add a topic list builder and rules panel
 
 ### 8.2 sidepanel.js
-- เปลี่ยนจาก single session controls ไปเป็น campaign state editor
-- เพิ่ม logic add/remove/reorder topic
-- เพิ่ม save/load campaign draft
-- เพิ่ม runtime monitor ระดับ campaign
+- Shift from single-session controls to a campaign state editor
+- Add logic for add/remove/reorder topics
+- Add save/load campaign draft support
+- Add campaign-level runtime monitoring
 
 ### 8.3 background.js
-- เพิ่ม state machine สำหรับ campaign
-- แยก topic scheduler ออกจาก AI queue เดิม
-- เพิ่ม quote scheduler ที่รู้จัก `quoteDistributionMode`
-- map draft/result กลับไปยัง campaign/topic ให้ครบ
+- Add a campaign state machine
+- Separate the topic scheduler from the existing AI queue
+- Add a quote scheduler aware of `quoteDistributionMode`
+- Map drafts/results back to their campaign/topic correctly
 
 ### 8.4 content_x.js
-- อาจต้องรองรับการรับคำสั่งค้นหาหลายหัวข้อแบบต่อเนื่อง
-- อาจต้องแยก source selection ให้ผูกกับ topic context ชัดขึ้น
+- May need to support continuous multi-topic search commands
+- May need to bind source selection to topic context more explicitly
 
-### 8.5 storage keys
-ควรเพิ่ม key ใหม่ เช่น:
+### 8.5 Storage Keys
+New keys should be added, such as:
 
 - `campaigns`
 - `activeCampaignId`
 - `campaignRuntime`
 
-โดยไม่ควรยัดทุกอย่างเข้า key เดิมอย่าง `settings` หรือ `processQueue`
+These should not be crammed into existing keys like `settings` or `processQueue`.
 
-## 9. แผน implementation ที่แนะนำ
+## 9. Recommended Implementation Plan
 
-### Milestone 1: Data Model ก่อน UI
-เป้าหมาย:
+### Milestone 1: Data Model Before UI
+Goal:
 
-- นิยาม campaign schema
-- นิยาม topic schema
-- นิยาม execution mode และ quote mode เป็น enum ชัดเจน
-- กำหนด migration จาก state เดิมให้ไม่พัง
+- Define the campaign schema
+- Define the topic schema
+- Define execution mode and quote mode as clear enums
+- Plan migration from the current state without breaking anything
 
-เหตุผล:
+Rationale:
 
-- ถ้า UI มาก่อน data model จะย้อนแก้หนัก
+- If UI is built before the data model, rework costs multiply
 
-### Milestone 2: หน้า Full Automate แบบ Static
-เป้าหมาย:
+### Milestone 2: Static Full Automate Page
+Goal:
 
-- เปลี่ยนหน้าแรกให้มี Campaign Header, Topic Builder, Rules, Runtime Monitor
-- ยังไม่ต้องรันจริงครบทุก flow
-- เน้น save/load state ใน storage ให้เสถียรก่อน
+- Redesign the home page with Campaign Header, Topic Builder, Rules, and Runtime Monitor sections
+- Not all flows need to work end-to-end yet
+- Focus on stable save/load state in storage
 
 ### Milestone 3: Topic Scheduler
-เป้าหมาย:
+Goal:
 
-- เพิ่มตัวเลือก `round-robin` และ `drain-topic`
-- ให้ background เลือกหัวข้อถัดไปได้ถูกต้อง
-- ผูก generated drafts กลับเข้าหัวข้อที่ถูกต้อง
+- Implement `round-robin` and `drain-topic` options
+- Enable background to select the correct next topic
+- Bind generated drafts back to the correct topic
 
 ### Milestone 4: Quote Distribution Scheduler
-เป้าหมาย:
+Goal:
 
-- เพิ่ม `sequential-by-product` และ `alternate-products`
-- ให้ quote flow ดึง draft ตาม policy จริง
+- Implement `sequential-by-product` and `alternate-products`
+- Enable the quote flow to pull drafts according to the actual policy
 
-### Milestone 5: Runtime Monitoring และ Recovery
-เป้าหมาย:
+### Milestone 5: Runtime Monitoring and Recovery
+Goal:
 
-- แสดง progress ต่อ topic แบบ live
-- resume หลัง service worker sleep ได้ดีขึ้น
-- แสดง error stage ให้รู้ว่าพังค้างตรงไหน
+- Show per-topic progress in real time
+- Improve resume reliability after service worker sleep
+- Display error stage so the user knows exactly where a failure occurred
 
-## 10. กติกา validation ที่ควรมีตั้งแต่วันแรก
+## 10. Validation Rules to Enforce from Day One
 
-### Validation ฝั่ง UI
-- ต้องมีอย่างน้อย 1 หัวข้อก่อนเริ่ม
-- หัวข้อห้ามว่าง
-- target post count ต้องมากกว่า 0
-- ลิงก์ถ้าใส่ต้อง parse ได้
+### UI-Side Validation
+- At least one topic is required before starting
+- Topics must not be empty
+- Target post count must be greater than 0
+- Links (if provided) must be parseable URLs
 
-### Validation ฝั่ง runtime
-- ห้ามเริ่ม campaign ใหม่ถ้ามี AI queue กำลังทำงานโดยไม่รู้ที่มา
-- draft ที่สร้างต้องมี `campaignId` และ `topicId`
-- quote queue ต้องไม่หยิบ draft ข้าม campaign ผิดชุด
+### Runtime Validation
+- A new campaign must not start if an AI queue is already active without a known origin
+- Every created draft must carry a `campaignId` and `topicId`
+- The quote queue must not pick drafts from the wrong campaign
 
-## 11. ความเสี่ยงหลัก
+## 11. Key Risks
 
-### 11.1 UI ซับซ้อนขึ้นมาก
-จาก single-form กลายเป็น multi-topic editor ถ้า layout ไม่ดีจะรกเร็วมาก
+### 11.1 Significantly Increased UI Complexity
+Going from a single form to a multi-topic editor — a poor layout will become cluttered fast.
 
-แนวทางลดความเสี่ยง:
+Mitigation:
 
-- ใช้ table-like card list ที่อ่านง่าย
-- ซ่อน advanced settings ไว้ส่วน rules
+- Use a table-like card list for readability
+- Hide advanced settings inside the rules section
 
-### 11.2 Scheduler ซ้อนกัน 2 ชั้น
-จะมีทั้ง AI generation scheduling และ quote distribution scheduling
+### 11.2 Two Overlapping Schedulers
+Both AI generation scheduling and quote distribution scheduling will exist.
 
-แนวทางลดความเสี่ยง:
+Mitigation:
 
-- แยก state machine ของ `generate` กับ `quote`
-- ไม่ใช้ flag memory เดียวคุมทุกอย่าง
+- Separate the `generate` and `quote` state machines
+- Do not use a single flag memory to control everything
 
-### 11.3 Recovery หลัง service worker sleep
-ถ้ายังพึ่ง in-memory มากเกินไป campaign ใหม่จะค้างง่าย
+### 11.3 Recovery After Service Worker Sleep
+Over-reliance on in-memory state will make the new campaign system fragile.
 
-แนวทางลดความเสี่ยง:
+Mitigation:
 
-- persist campaign runtime ที่จำเป็นลง storage
-- มี recovery pass ตอน service worker ฟื้น
+- Persist essential campaign runtime data to storage
+- Add a recovery pass when the service worker wakes up
 
-## 12. ขอบเขตที่ยังไม่ทำในรอบนี้
-เพื่อให้ scope ชัด รอบนี้ยังไม่รวม:
+## 12. Out of Scope for This Round
+To keep the scope clear, this round does not include:
 
-- การ redesign results page ทั้งหมด
-- analytics เชิงสถิติขั้นสูง
-- multi-campaign parallel run
-- template prompt per topic แบบซับซ้อนหลาย preset
+- A full redesign of the results page
+- Advanced analytics or statistics
+- Multi-campaign parallel execution
+- Complex per-topic prompt template presets
 
-## 13. Definition of Done สำหรับงานรอบถัดไป
-จะถือว่า feature นี้เริ่ม usable เมื่อครบอย่างน้อย:
+## 13. Definition of Done for the Next Round
+The feature is considered minimally usable when all of these are met:
 
-1. หน้าแรกเพิ่มหัวข้อได้หลายรายการ
-2. แต่ละหัวข้อใส่สินค้าและลิงก์ของตัวเองได้
-3. ตั้ง target post count ต่อหัวข้อได้
-4. เลือก `round-robin` หรือ `drain-topic` ได้
-5. เลือก `sequential-by-product` หรือ `alternate-products` ได้
-6. draft และ quote ทุกตัว trace กลับได้ว่าอยู่ topic ไหน
-7. ผู้ใช้เห็น progress ต่อหัวข้อจากหน้าแรกได้
+1. The home page supports adding multiple topics
+2. Each topic can have its own product and link
+3. Target post count can be set per topic
+4. `round-robin` or `drain-topic` can be selected
+5. `sequential-by-product` or `alternate-products` can be selected
+6. Every draft and quote is traceable to its source topic
+7. The user can see per-topic progress from the home page
 
-## 14. ข้อเสนอเชิงตัดสินใจก่อนเริ่มโค้ด
-ก่อนเริ่ม implementation ควรยืนยัน 3 เรื่องนี้ให้ชัด:
+## 14. Decisions Required Before Coding
+Three items must be confirmed before starting implementation:
 
-1. 1 หัวข้อจะผูกได้แค่ 1 สินค้า 1 ลิงก์ หรือจะให้ 1 หัวข้อมีหลายสินค้าในตัวเอง
-2. target post count หมายถึงจำนวน draft ที่สร้าง หรือจำนวน quote ที่โพสต์สำเร็จ
-3. หน้าแรกใหม่จะมาแทนหน้าเดิมทั้งหมด หรือให้มี tab `Full Automate` เพิ่มเข้ามาก่อนแล้วค่อยย้าย default ในรอบถัดไป
+1. Whether one topic binds to exactly one product + one link, or whether a single topic can hold multiple products internally
+2. Whether `targetPostCount` refers to the number of drafts created or the number of successfully published quotes
+3. Whether the new home page fully replaces the current one, or whether a `Full Automate` tab is added first with the default switch deferred to a later round
 
-## 15. ข้อเสนอแนะนำ
-จากโค้ดปัจจุบัน แนวทางที่เสี่ยงต่ำสุดคือ:
+## 15. Recommendations
+Based on the current codebase, the lowest-risk approach is:
 
-1. ทำ `Full Automate` เป็นหน้าแรกใหม่ใน side panel
-2. ใช้โมเดล `1 หัวข้อ = 1 สินค้า = 1 ลิงก์`
-3. ให้ `targetPostCount` หมายถึงจำนวน draft ที่ต้องสร้างก่อน
-4. แยก `quoteDistributionMode` ออกมาต่างหากจาก `topicExecutionMode`
+1. Make `Full Automate` the new default home page in the side panel
+2. Use the model `1 topic = 1 product = 1 link`
+3. Define `targetPostCount` as the number of drafts to be generated
+4. Keep `quoteDistributionMode` separate from `topicExecutionMode`
 
-แนวทางนี้ตรงกับความต้องการที่ขอ และยังต่อยอดจาก architecture เดิมได้โดยไม่ต้องรื้อทุก flow พร้อมกันในครั้งเดียว
+This approach aligns with the stated requirements and builds on the existing architecture without needing to overhaul every flow at once.

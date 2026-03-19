@@ -1,132 +1,132 @@
 # Release Readiness
 
-เอกสารนี้สรุปว่า snapshot ปัจจุบันควรปล่อยในระดับไหน และก่อน push/public share ควรเก็บงานอะไรเพิ่ม
+This document summarizes the current snapshot's release readiness level and what additional work should be done before pushing or sharing publicly.
 
-## สถานะปัจจุบัน
+## Current Status
 
-ระดับความพร้อม: `usable with caution`
+Readiness level: `usable with caution`
 
-ความหมาย:
+Meaning:
 
-- ใช้งานจริงได้ใน flow หลัก
-- เหมาะกับ internal use หรือใช้งานโดยคนที่เข้าใจระบบ
-- ยังไม่ควรสื่อสารว่าเป็น extension ที่ stable ต่อ UI changes ของ X/Grok
+- Functional for the main workflow
+- Suitable for internal use or by someone who understands the system
+- Should not be communicated as a stable extension against UI changes from X/Grok
 
-## สิ่งที่พร้อมแล้ว
+## What Is Ready
 
-- manifest และ permission ครบสำหรับ flow ปัจจุบัน
-- side panel ใช้งานจริงได้
-- draft/result persistence มีแล้ว
-- queue persistence มีแล้ว
-- auto quote มีการกันไม่ให้ชนกับ AI queue
-- auto quote scheduler ใช้ `chrome.alarms` แล้ว จึงเหมาะกับ MV3 กว่าเดิม
-- side panel มี countdown และสถานะ Auto Quote ตาม state จริง
-- prompt mode และ output normalization ทำให้ draft มีรูปแบบสม่ำเสมอขึ้น
-- prompt และข้อความสุดท้ายมี normalization ฝั่ง background
-- error diagnostics จาก editor ตอนนี้ไม่มี
+- Manifest and permissions are complete for the current flow
+- Side panel is functional for real use
+- Draft/result persistence is implemented
+- Queue persistence is implemented
+- Auto Quote has guards to prevent conflicts with the AI queue
+- Auto Quote scheduler uses `chrome.alarms`, making it more suitable for MV3 than before
+- Side panel has countdown and Auto Quote status reflecting actual state
+- Prompt mode and output normalization make drafts more consistently formatted
+- Prompt and final text have normalization on the background side
+- No error diagnostics from the editor at this time
 
-## สิ่งที่ยังเป็นหนี้เทคนิค
+## Outstanding Technical Debt
 
-### 1. ไม่มี automated tests
+### 1. No Automated Tests
 
-ผลกระทบ:
+Impact:
 
-- regression จับช้า
-- refactor `background.js` ยาก
-- parser/formatter เปลี่ยนแล้วมั่นใจยาก
+- Regressions are caught late
+- Refactoring `background.js` is risky
+- Parser/formatter changes are hard to verify with confidence
 
-### 2. ไม่มี `.git` แยกในโฟลเดอร์นี้แต่แรก
+### 2. No Separate `.git` in This Folder
 
-จากการตรวจ git พบว่าโฟลเดอร์นี้อยู่ภายใต้ parent repo ที่ใหญ่และ dirty มาก
+Git inspection shows this folder is under a large and very dirty parent repo.
 
-ผลกระทบ:
+Impact:
 
-- ถ้าจะ push โปรเจกต์นี้แยก ต้องสร้าง git repo ของตัวเองในโฟลเดอร์นี้
-- ห้ามใช้ parent repo ต่อโดยตรงถ้าต้องการอัปขึ้น GitHub repo ใหม่ของโปรเจกต์นี้
+- To push this project separately, a dedicated git repo must be created in this folder
+- Do not use the parent repo directly if the goal is to upload to a new GitHub repo for this project
 
-### 3. DOM change risk สูง
+### 3. High DOM Change Risk
 
-ระบบนี้จะพังได้จาก:
+The system can break from:
 
-- เปลี่ยน `data-testid`
-- เปลี่ยน menu order
-- เปลี่ยน composer structure
-- เปลี่ยนข้อความ aria-label
+- Changes to `data-testid`
+- Changes to menu order
+- Changes to composer structure
+- Changes to aria-label text
 
-### 4. Debug support ยังไม่พอ
+### 4. Insufficient Debug Support
 
-เวลาผู้ใช้บอกว่า:
+When users report:
 
-- เข้าคิวแล้วไม่ไปต่อ
-- Grok เปิดแล้วไม่ส่ง
-- Quote เปิดแล้วไม่พิมพ์
+- "Queued but nothing happens"
+- "Grok opened but did not send"
+- "Quote opened but did not type"
 
-ตอนนี้ยังต้องไล่ผ่าน console และ code เป็นหลัก
+Currently, debugging still requires going through console logs and code manually.
 
-### 5. ยังไม่มี end-to-end verification harness
+### 5. No End-to-End Verification Harness
 
-แม้ `content_x.js` จะมี post verification หลังคลิก submit แล้ว แต่การยืนยันยังเป็น heuristic จาก DOM/live-region ของ X ไม่ใช่ browser test แบบ deterministic
+Although `content_x.js` has post verification after clicking submit, the verification is still heuristic-based using DOM/live-region from X, not a deterministic browser test.
 
-## สิ่งที่ควรทำก่อน public release
+## Recommended Actions Before Public Release
 
-1. เพิ่ม `.gitignore` และแยก repo ให้ชัด
-2. เพิ่ม watchdog queue timeout สำหรับ AI generation flow
-3. เพิ่ม debug stage logging ที่อ่านได้จาก UI
-4. ลดการใช้ popup blocking ใน side panel
-5. เพิ่ม smoke test checklist ก่อนปล่อยทุกครั้ง
-6. ทดสอบ Auto Quote หลัง `chrome://extensions` reload เพื่อยืนยัน permission `alarms` ทำงานตามคาด
+1. Add `.gitignore` and set up a separate repo
+2. Add watchdog queue timeout for the AI generation flow
+3. Add debug stage logging readable from the UI
+4. Reduce blocking popup usage in the side panel
+5. Add a smoke test checklist before every release
+6. Test Auto Quote after `chrome://extensions` reload to confirm the `alarms` permission works as expected
 
 ## Smoke Test Checklist
 
-### X scan
+### X Scan
 
-- เปิด X แล้วสแกน tweet ได้
-- tweet ที่เกิน threshold ถูก highlight
-- ปุ่ม `AI Create Post` ถูก inject ถูกตำแหน่ง
+- Can open X and scan tweets
+- Tweets exceeding the threshold are highlighted
+- The `AI Create Post` button is injected in the correct position
 
-### AI generation
+### AI Generation
 
-- เปิด Grok popup ได้
-- หาช่อง input ได้
-- พิมพ์ prompt ได้
-- ส่ง prompt ได้
-- ได้ response จริง ไม่ใช่ prompt echo
+- Can open the Grok popup
+- Can find the input field
+- Can type the prompt
+- Can send the prompt
+- Receives a real response, not a prompt echo
 
 ### Queue
 
-- add หลายรายการเข้าคิวได้
-- start queue แล้ว item แรกเปลี่ยนเป็น `processing`
-- item ถัดไปทำต่ออัตโนมัติ
-- item ที่พังกลายเป็น `error`
-- item เสร็จแล้วคงอยู่ใน UI เป็น `done`
+- Can add multiple items to the queue
+- Starting the queue changes the first item to `processing`
+- The next item is processed automatically
+- Failed items become `error`
+- Completed items remain in the UI as `done`
 
 ### Draft and Results
 
-- draft ถูกบันทึก
-- result page เปิดได้
-- copy ใช้งานได้
-- edit draft แล้ว state อัปเดตจริง
+- Drafts are saved
+- Results page loads correctly
+- Copy function works
+- Editing a draft updates state correctly
 
-### Quote flow
+### Quote Flow
 
-- เปิด source tweet ได้
-- เปิด quote composer ได้
-- เติมข้อความเข้า compose ได้จริง
-- กดโพสต์อัตโนมัติได้จริง
-- countdown หมดเวลาแล้วรอบถัดไปยังทำงานต่อได้
+- Can open the source tweet
+- Can open the quote composer
+- Can insert text into the compose box
+- Can auto-submit the post
+- After countdown expires, the next cycle continues working
 
 ## Recommended Next Milestone
 
-milestone ถัดไปที่คุ้มที่สุด:
+The highest-value next milestone:
 
-- refactor service worker
-- add queue watchdog
-- add debug mode
-- add unit tests for text utilities
+- Refactor service worker
+- Add queue watchdog
+- Add debug mode
+- Add unit tests for text utilities
 
 ## Snapshot Notes
 
-- ถ้าอัปเดตจาก snapshot เก่ามายังรอบนี้ ต้อง `Reload` extension เพื่อรับ permission `alarms`
-- ในเชิง grounded review รอบนี้ Auto Quote ดีขึ้นชัดเจน แต่ยังไม่ควรสื่อสารว่า stable ต่อ DOM changes ของ X
+- If updating from an older snapshot to this round, you must `Reload` the extension to receive the `alarms` permission
+- From a grounded review perspective, Auto Quote has clearly improved this round, but it should not be communicated as stable against DOM changes from X
 
-ถ้าทำ 4 อย่างนี้ก่อน release รอบใหญ่ ความเสี่ยงหลักของโปรเจกต์จะลดลงชัดเจน
+Completing these 4 items before a major release will significantly reduce the project's primary risks.
