@@ -1,0 +1,11 @@
+{
+  "name": "xafi-build-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:dist": "node scripts/build-dist.mjs"
+  },
+  "devDependencies": {
+    "javascript-obfuscator": "^4.1.1"
+  }
+}
