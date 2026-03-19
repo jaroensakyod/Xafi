@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
@@ -53,8 +53,8 @@
     <div id="statusBar" class="status-bar hidden">
         <div class="status-bar-inner">
             <div class="spinner"></div>
-            <span id="statusText">กำลังประมวลผล...</span>
-            <button id="forceStopAiFromStatus" class="btn-small btn-danger" type="button">⛔ บังคับหยุด AI</button>
+            <span id="statusText">Processing...</span>
+            <button id="forceStopAiFromStatus" class="btn-small btn-danger" type="button">⛔ Force Stop AI</button>
         </div>
     </div>
 
@@ -65,7 +65,7 @@
                     <div class="campaign-panel-head">
                         <div>
                             <span class="campaign-panel-kicker">Automation Control</span>
-                            <h3>ควบคุม Auto Scout และดูสถานะการทำงาน</h3>
+                            <h3>Control Auto Scout and monitor status</h3>
                         </div>
                         <button id="btnAutoScout" class="btn-small campaign-scout-toggle"
                             style="background:#4b5563; color:white; border:none; border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px;">🤖
@@ -73,24 +73,24 @@
                     </div>
                     <div class="auto-scout-bar">
                         <input id="autoScoutQuery" class="auto-scout-input" type="text"
-                            placeholder="พิมพ์คำค้นที่อยากให้ไปหา เช่น #aitools, #bitcoin, #startup" />
+                            placeholder="Enter search query e.g. #aitools, #bitcoin, #startup" />
                     </div>
                     <div class="auto-scout-bar">
                         <input id="contextProduct" class="auto-scout-input" type="text"
-                            placeholder="สินค้า/บริการที่อยากผูกกับคอนเทนต์ เช่น คอร์ส AI, SaaS, ebook" />
+                            placeholder="Product/service to link with content e.g. AI course, SaaS, ebook" />
                     </div>
                     <div class="auto-scout-bar">
                         <input id="productLink" class="auto-scout-input" type="url"
-                            placeholder="ลิงก์สินค้า/บริการ เช่น https://example.com/product" />
+                            placeholder="Product/service link e.g. https://example.com/product" />
                     </div>
                     <div class="affiliate-shortcut-row campaign-affiliate-row">
                         <button id="openAffiliateProductOffer" class="btn-small affiliate-shortcut-btn"
-                            type="button">เชื่อมต่อลิงก์สินค้า Shopee Affiliate</button>
+                            type="button">Open Shopee Affiliate Product Link</button>
                     </div>
                     <div class="header-actions-row campaign-utility-row">
                         <button id="btnScoutStep" class="btn-small">⤵ Step Scroll</button>
                         <button id="btnScoutResume" class="btn-small">▶ Resume</button>
-                        <button id="forceStopAiBtn" class="btn-small btn-danger" type="button">⛔ บังคับหยุด AI</button>
+                        <button id="forceStopAiBtn" class="btn-small btn-danger" type="button">⛔ Force Stop AI</button>
                         <a id="openResultsPage" class="btn-small" href="#">📚 Results</a>
                         <button id="openLatestResult" class="btn-small">🆕 Latest</button>
                     </div>
@@ -103,11 +103,11 @@
                             <strong id="progressAiProvider">Grok</strong>
                         </div>
                         <div class="progress-item">
-                            <span class="progress-label">คำค้น</span>
+                            <span class="progress-label">Query</span>
                             <strong id="progressQuery">-</strong>
                         </div>
                         <div class="progress-item">
-                            <span class="progress-label">สินค้า</span>
+                            <span class="progress-label">Product</span>
                             <strong id="progressProduct">-</strong>
                         </div>
                         <div class="progress-item">
@@ -123,8 +123,8 @@
                             <strong id="progressFound">0</strong>
                         </div>
                         <div class="progress-item progress-item-wide">
-                            <span class="progress-label">สถานะ</span>
-                            <strong id="progressPauseReason">พร้อม</strong>
+                            <span class="progress-label">Status</span>
+                            <strong id="progressPauseReason">Ready</strong>
                         </div>
                     </div>
                 </section>
@@ -138,8 +138,8 @@
             <section class="campaign-overview-card">
                 <div class="campaign-overview-copy">
                     <span class="campaign-kicker">Full Auto Workspace</span>
-                    <h2>วางแผนหัวข้อและกติกาของ campaign</h2>
-                    <p>ใช้หน้านี้สำหรับตั้งชื่อแคมเปญ เพิ่มหลายหัวข้อ และกำหนดลำดับการวิ่งหัวข้อกับการ Quote</p>
+                    <h2>Plan topics and rules for your campaign</h2>
+                    <p>Use this page to name your campaign, add multiple topics, and set the execution order for topics and quoting</p>
                 </div>
             </section>
 
@@ -148,30 +148,30 @@
                     <div class="campaign-panel-head campaign-panel-head-stack">
                         <div>
                             <span class="campaign-panel-kicker">Campaign Setup</span>
-                            <h3>กำหนดชื่อและรายการหัวข้อ</h3>
+                            <h3>Set name and topic list</h3>
                         </div>
                         <div class="campaign-controls">
                             <button id="campaignStartBtn" class="btn-small btn-primary"
                                 style="background:#10b981;">&#9654;
-                                เริ่ม</button>
-                            <button id="campaignPauseBtn" class="btn-small" style="display:none;">&#9208; พัก</button>
+                                Start</button>
+                            <button id="campaignPauseBtn" class="btn-small" style="display:none;">&#9208; Pause</button>
                             <button id="campaignResumeBtn" class="btn-small" style="display:none;">&#9654;
-                                ทำต่อ</button>
+                                Resume</button>
                             <button id="campaignStopBtn" class="btn-small btn-danger" style="display:none;">&#9209;
-                                หยุด</button>
+                                Stop</button>
                         </div>
                     </div>
 
                     <div class="form-group campaign-name-group">
-                        <label>ชื่อ Campaign</label>
+                        <label>Campaign Name</label>
                         <input type="text" id="campaignName" class="auto-scout-input"
-                            placeholder="เช่น รอบเช้า 20 มี.ค." />
+                            placeholder="e.g. Morning Run Mar 20" />
                     </div>
 
                     <div class="campaign-section">
                         <div class="section-header">
-                            <h3>หัวข้อ</h3>
-                            <button id="addTopicBtn" class="btn-small">+ เพิ่มหัวข้อ</button>
+                            <h3>Topics</h3>
+                            <button id="addTopicBtn" class="btn-small">+ Add Topic</button>
                         </div>
                         <div id="topicList" class="topic-list"></div>
                     </div>
@@ -181,35 +181,35 @@
                     <div class="campaign-panel-head campaign-panel-head-stack">
                         <div>
                             <span class="campaign-panel-kicker">Execution Rules</span>
-                            <h3>ตั้งลำดับการสลับหัวข้อและการ Quote</h3>
+                            <h3>Set topic rotation and quote order</h3>
                         </div>
                     </div>
 
                     <div class="campaign-section campaign-rules-grid">
                         <div class="form-group campaign-rule-card">
-                            <label>ลำดับหัวข้อ</label>
+                            <label>Topic Order</label>
                             <select id="topicExecMode">
-                                <option value="round-robin">สลับหัวข้อ (Round Robin)</option>
-                                <option value="drain-topic">ทำหัวข้อเดียวให้ครบก่อน</option>
+                                <option value="round-robin">Rotate Topics (Round Robin)</option>
+                                <option value="drain-topic">Complete One Topic First</option>
                             </select>
                         </div>
                         <div class="form-group campaign-rule-card">
-                            <label>ลำดับ Quote</label>
+                            <label>Quote Order</label>
                             <select id="quoteDistMode">
-                                <option value="sequential-by-product">เรียงทีละสินค้า</option>
-                                <option value="alternate-products">สลับสินค้า</option>
+                                <option value="sequential-by-product">Sequential by Product</option>
+                                <option value="alternate-products">Alternate Products</option>
                             </select>
                         </div>
                     </div>
 
                     <div id="campaignMonitor" class="campaign-monitor hidden">
-                        <h3>สถานะ Campaign</h3>
+                        <h3>Campaign Status</h3>
                         <div id="campaignMonitorContent"></div>
                     </div>
 
                     <div class="campaign-actions">
-                        <button id="campaignResetBtn" class="btn-small">🔄 รีเซ็ต</button>
-                        <button id="campaignDeleteBtn" class="btn-small btn-danger">🗑️ ลบ Campaign</button>
+                        <button id="campaignResetBtn" class="btn-small">🔄 Reset</button>
+                        <button id="campaignDeleteBtn" class="btn-small btn-danger">🗑️ Delete Campaign</button>
                     </div>
                 </section>
             </div>
@@ -219,23 +219,23 @@
     <!-- ===== Tab: Drafts ===== -->
     <section id="tab-drafts" class="tab-content">
         <div class="section-header">
-            <h2>ข้อความที่ AI สร้างไว้</h2>
+            <h2>AI-Generated Drafts</h2>
             <div style="display: flex; gap: 8px;">
-                <button id="btnAutoQuote" class="btn-small btn-primary" title="เปิดโหมดสุ่มลุย Quote อัตโนมัติ"
-                    style="background:#10b981;">🚀 เริ่ม Auto Quote</button>
-                <button id="clearDrafts" class="btn-small btn-danger" title="ลบทั้งหมด">🗑️ ลบทั้งหมด</button>
+                <button id="btnAutoQuote" class="btn-small btn-primary" title="Start automatic quote posting mode"
+                    style="background:#10b981;">🚀 Start Auto Quote</button>
+                <button id="clearDrafts" class="btn-small btn-danger" title="Clear all">🗑️ Clear All</button>
             </div>
         </div>
         <div class="auto-quote-status hidden" id="autoQuoteStatus"
             style="font-size: 0.85em; color: #10b981; margin-bottom: 8px; font-weight: bold;">
-            ⏳ ระบบ Auto Quote ทำงานอยู่ - กำลังลุย Draft ตามคิว
+            ⏳ Auto Quote is running - processing drafts in queue
         </div>
         <div id="autoQuoteSummary" class="hidden"
             style="font-size: 0.82em; color: #94a3b8; margin-bottom: 10px; line-height: 1.45;"></div>
         <div id="draftList" class="card-list">
             <div class="empty-state">
-                <p>📭 ยังไม่มี Draft</p>
-                <p class="hint">กดปุ่ม "🔥 AI Create Post" บนโพสต์ Viral เพื่อเริ่มสร้าง</p>
+                <p>📭 No Drafts Yet</p>
+                <p class="hint">Click "🔥 AI Create Post" on a viral post to start generating</p>
             </div>
         </div>
     </section>
@@ -243,7 +243,7 @@
     <section id="tab-results" class="tab-content">
         <div class="section-header">
             <h2>Results Library</h2>
-            <button id="clearResultsBtn" class="btn-small btn-danger" title="ลบทั้งหมด">🗑️ ลบทั้งหมด</button>
+            <button id="clearResultsBtn" class="btn-small btn-danger" title="Clear all">🗑️ Clear All</button>
         </div>
         <div id="resultsPreviewList" class="card-list"></div>
     </section>
@@ -251,9 +251,9 @@
     <section id="tab-trends" class="tab-content">
         <div class="section-header">
             <div class="section-header-title-row">
-                <h2>Google Trends วันนี้</h2>
+                <h2>Google Trends Today</h2>
                 <button id="toggleTrendsPanel" class="btn-small section-toggle-btn" type="button"
-                    aria-expanded="true">ย่อ</button>
+                    aria-expanded="true">Collapse</button>
             </div>
             <div class="found-toolbar">
                 <select id="trendsCountry" class="compact-select">
@@ -261,13 +261,13 @@
                     <option value="US">US</option>
                     <option value="JP">JP</option>
                 </select>
-                <button id="refreshTrends" class="btn-small" title="รีเฟรชคำค้น">↻ รีเฟรช</button>
+                <button id="refreshTrends" class="btn-small" title="Refresh trends">↻ Refresh</button>
             </div>
         </div>
         <div id="trendListWrap" class="collapsible-section is-expanded">
             <div id="trendList" class="card-list compact-list">
                 <div class="empty-state">
-                    <p>📈 ยังไม่มีคำฮิตวันนี้</p>
+                    <p>📈 No trending topics yet</p>
                 </div>
             </div>
         </div>
@@ -276,34 +276,34 @@
     <!-- ===== Tab: Found (Viral Posts) ===== -->
     <section id="tab-found" class="tab-content">
         <div class="section-header">
-            <h2>โพสต์ Viral ที่พบ</h2>
+            <h2>Viral Posts Found</h2>
             <div style="display: flex; gap: 8px;">
-                <button id="batchCreateAiBtn" class="btn-small btn-primary" title="สร้างคอนเทนต์จากที่เลือกไว้"
-                    style="background: #8b5cf6;">เข้าคิว AI (<span id="batchCount">0</span>)</button>
-                <button id="clearFound" class="btn-small btn-danger" title="ลบทั้งหมด">🗑️ ลบทั้งหมด</button>
+                <button id="batchCreateAiBtn" class="btn-small btn-primary" title="Generate content from selected posts"
+                    style="background: #8b5cf6;">Queue AI (<span id="batchCount">0</span>)</button>
+                <button id="clearFound" class="btn-small btn-danger" title="Clear all">🗑️ Clear All</button>
             </div>
         </div>
         <div id="foundList" class="card-list">
             <div class="empty-state">
-                <p>🔍 ยังไม่พบโพสต์ Viral</p>
-                <p class="hint">เปิดหน้า Trending ของ X แล้ว Extension จะสแกนให้อัตโนมัติ</p>
+                <p>🔍 No Viral Posts Found</p>
+                <p class="hint">Open X Trending page and the extension will scan automatically</p>
             </div>
         </div>
     </section>
 
     <section id="tab-queue" class="tab-content">
         <div class="section-header">
-            <h2>คิวสร้างคอนเทนต์</h2>
+            <h2>Content Queue</h2>
             <div style="display: flex; gap: 8px;">
                 <button id="startQueueBtn" class="btn-small btn-primary"
-                    style="background:#10b981;">สร้างคอนเทนต์ตามคิว</button>
-                <button id="clearQueueBtn" class="btn-small btn-danger">ล้างคิว</button>
+                    style="background:#10b981;">Process Queue</button>
+                <button id="clearQueueBtn" class="btn-small btn-danger">Clear Queue</button>
             </div>
         </div>
         <div id="queueList" class="card-list">
             <div class="empty-state">
-                <p>🗂️ ยังไม่มีรายการในคิว</p>
-                <p class="hint">ติ๊กเลือกจาก Found แล้วกด เข้าคิว AI</p>
+                <p>🗂️ No Items in Queue</p>
+                <p class="hint">Select posts from Found and click Queue AI</p>
             </div>
         </div>
     </section>
@@ -312,15 +312,15 @@
     <section id="tab-settings" class="tab-content">
         <div class="settings-form">
             <div class="form-group">
-                <label>ยอด Views ขั้นต่ำ</label>
+                <label>Minimum Views</label>
                 <div class="input-with-hint">
                     <input type="number" id="minViews" value="500000" min="1000" step="10000">
-                    <span class="input-hint">เช่น 500000 = 500K</span>
+                    <span class="input-hint">e.g. 500000 = 500K</span>
                 </div>
             </div>
 
             <div class="form-group">
-                <label>ความเร็วพิมพ์ (ms ต่อตัวอักษร)</label>
+                <label>Typing Speed (ms per character)</label>
                 <div class="speed-inputs">
                     <div>
                         <span>Min:</span>
@@ -334,12 +334,12 @@
             </div>
 
             <div class="form-group">
-                <label>หยุดพักทุกๆ (ตัวอักษร)</label>
+                <label>Pause Every (characters)</label>
                 <input type="number" id="pauseEveryChars" value="40" min="10" max="200">
             </div>
 
             <div class="form-group">
-                <label>ระยะเวลาพัก (ms)</label>
+                <label>Pause Duration (ms)</label>
                 <div class="speed-inputs">
                     <div>
                         <span>Min:</span>
@@ -358,7 +358,7 @@
                     <option value="grok">Grok</option>
                     <option value="gemini">Gemini</option>
                 </select>
-                <span class="input-hint">เลือกเว็บ AI ที่จะใช้สร้างคอนเทนต์ระหว่าง Grok และ Gemini</span>
+                <span class="input-hint">Choose the AI provider for content generation: Grok or Gemini</span>
             </div>
 
             <div class="form-group">
@@ -367,16 +367,16 @@
                     <option value="soft-sell">Soft Sell</option>
                     <option value="hot-take">Hot Take</option>
                 </select>
-                <span class="input-hint">Soft Sell จะเน้นขายเนียน ๆ ส่วน Hot Take
-                    จะเปิดแรงและมีน้ำหนักเชิงความเห็นมากขึ้น</span>
+                <span class="input-hint">Soft Sell uses subtle product mentions. Hot Take
+                    opens stronger with more opinionated weight</span>
             </div>
 
             <div class="form-group">
                 <label>Prompt Template</label>
                 <textarea id="promptTemplate" rows="10"
-                    placeholder="ใส่ Prompt ที่ต้องการ...ใช้ {CONTENT} เป็นตัวแทนเนื้อหาต้นทาง"></textarea>
-                <span class="input-hint">ระบบจะใช้ Prompt Mode เป็น style layer เพิ่มอีกชั้น
-                    และบังคับข้อความสุดท้ายรวมลิงก์สินค้าแล้วไม่เกิน 280 ตัวอักษร</span>
+                    placeholder="Enter your prompt... Use {CONTENT} as the source content placeholder"></textarea>
+                <span class="input-hint">The system adds Prompt Mode as an extra style layer
+                    and enforces the final text including product link stays within 280 characters</span>
             </div>
 
             <div class="form-group">
@@ -389,52 +389,52 @@
             </div>
 
             <div class="form-group checkbox-group">
-                <label><input type="checkbox" id="manualAssist"> เปิด Manual Assist Mode</label>
-                <span class="input-hint">เมื่อเปิดไว้ ระบบจะรอให้กด Step Scroll แทนการเลื่อนต่อเนื่อง</span>
+                <label><input type="checkbox" id="manualAssist"> Enable Manual Assist Mode</label>
+                <span class="input-hint">When enabled, the system waits for Step Scroll instead of continuous scrolling</span>
             </div>
 
             <div class="form-group checkbox-group">
-                <label><input type="checkbox" id="pauseOnFound"> หยุดเมื่อเจอโพสต์ที่เข้าเงื่อนไข</label>
+                <label><input type="checkbox" id="pauseOnFound"> Pause when matching posts found</label>
             </div>
 
             <div class="form-group pause-on-found-config">
-                <label>หยุดเมื่อเจอครบกี่โพสต์</label>
+                <label>Pause after finding N posts</label>
                 <div class="input-with-hint">
                     <input type="number" id="pauseOnFoundCount" value="1" min="1" max="100">
-                    <span class="input-hint">เช่น ใส่ 3 = ระบบจะหยุดเมื่อเจอโพสต์ที่เข้าเงื่อนไขครบ 3 โพสต์</span>
+                    <span class="input-hint">e.g. set to 3 = system pauses after finding 3 matching posts</span>
                 </div>
             </div>
 
             <div class="form-group">
-                <label>ระยะเวลา Auto Quote (สุ่มช่วงนาที)</label>
+                <label>Auto Quote Interval (random range in minutes)</label>
                 <div class="speed-inputs">
                     <div>
-                        <span>Min (นาที):</span>
+                        <span>Min (min):</span>
                         <input type="number" id="autoQuoteMinMinutes" value="2" min="1" max="60">
                     </div>
                     <div>
-                        <span>Max (นาที):</span>
+                        <span>Max (min):</span>
                         <input type="number" id="autoQuoteMaxMinutes" value="5" min="2" max="120">
                     </div>
                 </div>
             </div>
 
             <div class="form-group">
-                <label>Checkpoint ทุกกี่ครั้งที่เลื่อน</label>
+                <label>Checkpoint Every N Scrolls</label>
                 <input type="number" id="checkpointEverySteps" value="6" min="1" max="100">
             </div>
 
             <div class="form-group">
-                <label>Session Limit (จำนวนโพสต์ต่อรอบ)</label>
+                <label>Session Limit (posts per session)</label>
                 <input type="number" id="sessionLimit" value="15" min="1" max="500">
             </div>
 
             <div class="form-group">
-                <label>Daily Limit (จำนวนโพสต์ต่อวัน)</label>
+                <label>Daily Limit (posts per day)</label>
                 <input type="number" id="dailyLimit" value="60" min="1" max="1000">
             </div>
 
-            <button id="saveSettings" class="btn-primary">💾 บันทึก Settings</button>
+            <button id="saveSettings" class="btn-primary">💾 Save Settings</button>
             <div id="settingsMsg" class="settings-msg hidden"></div>
         </div>
     </section>

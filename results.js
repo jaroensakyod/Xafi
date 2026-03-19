@@ -8,7 +8,7 @@
     loadResults();
 
     clearBtn.addEventListener('click', async () => {
-        const confirmed = window.confirm('ล้าง results ทั้งหมด?');
+        const confirmed = window.confirm('Clear all results?');
         if (!confirmed) return;
         await sendMessage({ type: 'CLEAR_RESULTS' });
         loadResults();
@@ -25,7 +25,7 @@
         const results = response?.data || [];
 
         if (!results.length) {
-            listEl.innerHTML = '<div class="empty-results">ยังไม่มีผลลัพธ์ที่เก็บไว้</div>';
+            listEl.innerHTML = '<div class="empty-results">No results saved yet</div>';
             return;
         }
 
@@ -33,19 +33,19 @@
             <section class="result-card" id="result-${escapeAttr(item.id)}">
                 <div class="result-top">
                     <div class="meta">
-                        <span class="chip">${item.copied ? 'คัดลอกแล้ว' : 'ยังไม่ได้คัดลอก'}</span>
-                        ${item.product ? `<span class="chip">สินค้า: ${escapeHtml(item.product)}</span>` : ''}
-                        ${item.productLink ? `<span class="chip">มีลิงก์สินค้า</span>` : ''}
-                        <span class="chip char-count">${getCharCount(item.finalText || item.generatedText)} ตัว</span>
+                        <span class="chip">${item.copied ? 'Copied' : 'Not copied'}</span>
+                        ${item.product ? `<span class="chip">Product: ${escapeHtml(item.product)}</span>` : ''}
+                        ${item.productLink ? `<span class="chip">Has product link</span>` : ''}
+                        <span class="chip char-count">${getCharCount(item.finalText || item.generatedText)} chars</span>
                         <span class="chip">${formatTime(item.createdAt)}</span>
                     </div>
                 </div>
                 <pre class="result-text">${escapeHtml(item.finalText || item.generatedText)}</pre>
-                <div class="source-snippet">ต้นทาง: ${escapeHtml(item.sourceText || '-')}</div>
+                <div class="source-snippet">Source: ${escapeHtml(item.sourceText || '-')}</div>
                 <div class="actions">
                     <button class="primary-btn copy-btn">Copy</button>
-                    ${item.sourceUrl ? `<a class="link-btn" target="_blank" href="${escapeAttr(item.sourceUrl)}">เปิดโพสต์ต้นทาง</a>` : ''}
-                    ${item.productLink ? `<a class="link-btn" target="_blank" href="${escapeAttr(item.productLink)}">เปิดลิงก์สินค้า</a>` : ''}
+                    ${item.sourceUrl ? `<a class="link-btn" target="_blank" href="${escapeAttr(item.sourceUrl)}">Open Source Post</a>` : ''}
+                    ${item.productLink ? `<a class="link-btn" target="_blank" href="${escapeAttr(item.productLink)}">Open Product Link</a>` : ''}
                 </div>
             </section>
         `).join('');
@@ -68,7 +68,7 @@
     }
 
     function formatTime(iso) {
-        return new Date(iso).toLocaleString('th-TH');
+        return new Date(iso).toLocaleString('en-US');
     }
 
     function escapeHtml(value) {

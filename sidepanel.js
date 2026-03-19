@@ -90,7 +90,7 @@
             if (autoScoutQueryInput) autoScoutQueryInput.value = query;
 
             if (nextEnabled && (!query || query === HASHTAG_PREFIX)) {
-                alert('กรอกคำค้นก่อนเปิด Auto Scout');
+                alert('Enter a search query before enabling Auto Scout');
                 autoScoutQueryInput?.focus();
                 return;
             }
@@ -168,13 +168,13 @@
         if (!btnAutoQuote || !autoQuoteStatus || !autoQuoteSummary) return;
 
         if (isAutoQuote) {
-            btnAutoQuote.textContent = '⏹️ หยุด Auto Quote';
+            btnAutoQuote.textContent = '⏹️ Stop Auto Quote';
             btnAutoQuote.style.background = '#ef4444';
             autoQuoteStatus.classList.remove('hidden');
             return;
         }
 
-        btnAutoQuote.textContent = '🚀 เริ่ม Auto Quote';
+        btnAutoQuote.textContent = '🚀 Start Auto Quote';
         btnAutoQuote.style.background = '#10b981';
         autoQuoteStatus.classList.add('hidden');
         if (!autoQuoteState?.postedCount && !autoQuoteState?.failedCount && !autoQuoteState?.lastFailedReason) {
@@ -191,13 +191,13 @@
         const failedCount = Number(state.failedCount || 0);
         const skippedCount = Number(state.skippedCount || 0);
         const summaryParts = [
-            `สำเร็จ ${postedCount}`,
-            `ไม่สำเร็จ ${failedCount}`,
-            `ข้าม ${skippedCount}`
+            `Succeeded ${postedCount}`,
+            `Failed ${failedCount}`,
+            `Skipped ${skippedCount}`
         ];
         if (state.lastFailedDraftId || state.lastFailedReason) {
-            const reasonText = state.lastFailedReason || 'ไม่ทราบสาเหตุ';
-            summaryParts.push(`ล่าสุด ${state.lastFailedDraftId || '-'}: ${reasonText}`);
+            const reasonText = state.lastFailedReason || 'Unknown reason';
+            summaryParts.push(`Latest ${state.lastFailedDraftId || '-'}: ${reasonText}`);
         }
         autoQuoteSummary.textContent = summaryParts.join(' • ');
         if (state.active || postedCount || failedCount || state.lastFailedReason) {
@@ -207,7 +207,7 @@
         }
 
         if (!state.active) {
-            autoQuoteStatus.textContent = state.message || '⏳ ระบบ Auto Quote ทำงานอยู่ - กำลังลุย Draft ตามคิว';
+            autoQuoteStatus.textContent = state.message || '⏳ Auto Quote is running - processing drafts in queue';
             return;
         }
 
@@ -217,24 +217,24 @@
         switch (state.phase) {
             case 'waiting-ai':
                 autoQuoteStatus.textContent = countdown
-                    ? `⏳ รอ ${providerLabel} ว่างก่อนเริ่ม Auto Quote • เริ่มใน ${countdown}`
-                    : `⏳ รอ ${providerLabel} ว่างก่อนเริ่ม Auto Quote`;
+                    ? `⏳ Waiting for ${providerLabel} before starting Auto Quote • Starting in ${countdown}`
+                    : `⏳ Waiting for ${providerLabel} before starting Auto Quote`;
                 break;
             case 'posting':
-                autoQuoteStatus.textContent = `🚀 กำลังโพสต์ draft ${state.currentDraftId || ''}${pendingCount ? ` • คงเหลือ ${pendingCount} รายการ` : ''}`.trim();
+                autoQuoteStatus.textContent = `🚀 Posting draft ${state.currentDraftId || ''}${pendingCount ? ` • ${pendingCount} remaining` : ''}`.trim();
                 break;
             case 'waiting-next':
                 autoQuoteStatus.textContent = countdown
-                    ? `⏳ โพสต์ถัดไปใน ${countdown}${pendingCount ? ` • เหลือ ${pendingCount} รายการ` : ''}`
-                    : `⏳ รอโพสต์ถัดไป${pendingCount ? ` • เหลือ ${pendingCount} รายการ` : ''}`;
+                    ? `⏳ Next post in ${countdown}${pendingCount ? ` • ${pendingCount} remaining` : ''}`
+                    : `⏳ Waiting for next post${pendingCount ? ` • ${pendingCount} remaining` : ''}`;
                 break;
             case 'retrying':
                 autoQuoteStatus.textContent = countdown
-                    ? `⚠️ Auto Quote มีปัญหา กำลังลองใหม่ใน ${countdown}`
-                    : '⚠️ Auto Quote มีปัญหา กำลังลองใหม่อัตโนมัติ';
+                    ? `⚠️ Auto Quote error, retrying in ${countdown}`
+                    : '⚠️ Auto Quote error, retrying automatically';
                 break;
             default:
-                autoQuoteStatus.textContent = state.message || '⏳ ระบบ Auto Quote ทำงานอยู่';
+                autoQuoteStatus.textContent = state.message || '⏳ Auto Quote is running';
                 break;
         }
     }
@@ -247,10 +247,10 @@
         const seconds = totalSeconds % 60;
 
         if (minutes <= 0) {
-            return `${seconds} วินาที`;
+            return `${seconds} seconds`;
         }
 
-        return `${minutes} นาที ${seconds} วินาที`;
+        return `${minutes} min ${seconds} sec`;
     }
 
     if (btnAutoQuote) {
@@ -260,7 +260,7 @@
                 const res = await sendMessage({ type: 'START_AUTO_QUOTE' });
                 if (!res?.success) {
                     isAutoQuote = false;
-                    alert(res?.error || 'ยังเริ่ม Auto Quote ไม่ได้');
+                    alert(res?.error || 'Cannot start Auto Quote yet');
                     updateAutoQuoteUi();
                     return;
                 }
@@ -285,16 +285,16 @@
     });
 
     async function handleForceStopAi() {
-        const confirmed = confirm('ต้องการบังคับหยุดงาน AI ที่ค้างอยู่ตอนนี้ใช่ไหม');
+        const confirmed = confirm('Force stop the current AI task?');
         if (!confirmed) return;
 
         const res = await sendMessage({ type: 'FORCE_STOP_AI' });
         if (!res?.success) {
-            alert(res?.error || 'บังคับหยุด AI ไม่สำเร็จ');
+            alert(res?.error || 'Failed to force stop AI');
             return;
         }
 
-        statusText.textContent = 'บังคับหยุด AI แล้ว';
+        statusText.textContent = 'AI force stopped';
         statusBar.classList.add('hidden');
         loadProcessQueue();
         loadDrafts();
@@ -439,8 +439,8 @@
         if (drafts.length === 0) {
             draftList.innerHTML = `
         <div class="empty-state">
-          <p>📭 ยังไม่มี Draft</p>
-          <p class="hint">กดปุ่ม "🔥 AI Create Post" บนโพสต์ Viral เพื่อเริ่มสร้าง</p>
+          <p>📭 No Drafts Yet</p>
+          <p class="hint">Click "🔥 AI Create Post" on a viral post to start generating</p>
         </div>`;
             return;
         }
@@ -451,27 +451,27 @@
                                         ${renderDraftStatusBadge(draft)}
                     <div class="card-meta-right">
                                                 ${renderDraftReadinessBadge(draft)}
-                        <span class="char-count">${getCharCount(draft.finalText || draft.generatedText)} ตัว</span>
+                        <span class="char-count">${getCharCount(draft.finalText || draft.generatedText)} chars</span>
                         <span class="card-time">${formatTime(draft.createdAt)}</span>
                     </div>
         </div>
 
-        ${draft.sourceUrl ? `<div class="card-source">📌 จาก: <a href="${escapeAttr(draft.sourceUrl)}" target="_blank">${escapeHtml(draft.sourceAuthor || 'โพสต์ต้นทาง')}</a></div>` : ''}
+        ${draft.sourceUrl ? `<div class="card-source">📌 From: <a href="${escapeAttr(draft.sourceUrl)}" target="_blank">${escapeHtml(draft.sourceAuthor || 'Source post')}</a></div>` : ''}
 
         <div class="card-content draft-text" contenteditable="false">${escapeHtml(draft.finalText || draft.generatedText)}</div>
-                ${draft.postError ? `<div class="card-source" style="color:#fca5a5;">เหตุผล: ${escapeHtml(draft.postError)}</div>` : ''}
+                ${draft.postError ? `<div class="card-source" style="color:#fca5a5;">Reason: ${escapeHtml(draft.postError)}</div>` : ''}
 
         <div class="card-actions">
-          <button class="btn-action btn-post" data-action="post" data-id="${escapeAttr(draft.id)}" title="ส่งไปโพสต์บน X">
+          <button class="btn-action btn-post" data-action="post" data-id="${escapeAttr(draft.id)}" title="Post to X">
             🚀 Post to X
           </button>
-          <button class="btn-action btn-copy" data-action="copy" data-id="${escapeAttr(draft.id)}" title="คัดลอกข้อความ">
+          <button class="btn-action btn-copy" data-action="copy" data-id="${escapeAttr(draft.id)}" title="Copy text">
             📋 Copy
           </button>
-          <button class="btn-action btn-edit" data-action="edit" data-id="${escapeAttr(draft.id)}" title="แก้ไข">
+          <button class="btn-action btn-edit" data-action="edit" data-id="${escapeAttr(draft.id)}" title="Edit">
             ✏️ Edit
           </button>
-          <button class="btn-action btn-delete" data-action="delete" data-id="${escapeAttr(draft.id)}" title="ลบ">
+          <button class="btn-action btn-delete" data-action="delete" data-id="${escapeAttr(draft.id)}" title="Delete">
             🗑️
           </button>
         </div>
@@ -495,14 +495,14 @@
         switch (action) {
             case 'post': {
                 e.currentTarget.disabled = true;
-                e.currentTarget.textContent = '⏳ กำลังส่ง...';
+                e.currentTarget.textContent = '⏳ Posting...';
                 const response = await sendMessage({ type: 'POST_TO_X', data: { id } });
                 if (response?.success) {
-                    e.currentTarget.textContent = '✅ ส่งแล้ว!';
+                    e.currentTarget.textContent = '✅ Posted!';
                     e.currentTarget.classList.add('btn-success');
                 } else {
                     e.currentTarget.disabled = false;
-                    e.currentTarget.textContent = '❌ ลองใหม่';
+                    e.currentTarget.textContent = '❌ Retry';
                 }
                 break;
             }
@@ -544,7 +544,7 @@
             }
 
             case 'delete': {
-                if (confirm('ลบ Draft นี้?')) {
+                if (confirm('Delete this Draft?')) {
                     await sendMessage({ type: 'DELETE_DRAFT', data: { id } });
                     card.style.opacity = '0';
                     card.style.transform = 'translateX(100%)';
@@ -556,8 +556,8 @@
                         if (remaining === 0) {
                             draftList.innerHTML = `
                 <div class="empty-state">
-                  <p>📭 ยังไม่มี Draft</p>
-                  <p class="hint">กดปุ่ม "🔥 AI Create Post" บนโพสต์ Viral เพื่อเริ่มสร้าง</p>
+                  <p>📭 No Drafts Yet</p>
+                  <p class="hint">Click "🔥 AI Create Post" on a viral post to start generating</p>
                 </div>`;
                         }
                     }, 300);
@@ -576,8 +576,8 @@
         if (posts.length === 0) {
             foundList.innerHTML = `
         <div class="empty-state">
-          <p>🔍 ยังไม่พบโพสต์ Viral</p>
-          <p class="hint">เปิดหน้า Trending ของ X แล้ว Extension จะสแกนให้อัตโนมัติ</p>
+          <p>🔍 No Viral Posts Found</p>
+          <p class="hint">Open X Trending page and the extension will scan automatically</p>
         </div>`;
             return;
         }
@@ -596,9 +596,9 @@
         <div class="card-content">${escapeHtml(truncate(post.text, 200))}</div>
         <div class="card-actions">
           <button class="btn-action btn-process" data-post='${escapeAttr(JSON.stringify(post))}'>
-            🔥 สร้างคอนเทนต์
+            🔥 Create Content
           </button>
-          ${post.url ? `<a class="btn-action btn-link" href="${escapeAttr(post.url)}" target="_blank">🔗 ดูโพสต์ต้นฉบับ</a>` : ''}
+          ${post.url ? `<a class="btn-action btn-link" href="${escapeAttr(post.url)}" target="_blank">🔗 View Original</a>` : ''}
         </div>
       </div>
     `).join('');
@@ -625,9 +625,9 @@
             btn.addEventListener('click', async (e) => {
                 const post = JSON.parse(e.currentTarget.getAttribute('data-post'));
                 e.currentTarget.disabled = true;
-                e.currentTarget.textContent = '⏳ กำลังเข้าคิว...';
+                e.currentTarget.textContent = '⏳ Queuing...';
                 await sendMessage({ type: 'PROCESS_WITH_AI', data: post });
-                e.currentTarget.textContent = '✅ ส่งแล้ว!';
+                e.currentTarget.textContent = '✅ Queued!';
             });
         });
     }
@@ -638,8 +638,8 @@
         if (!posts.length) {
             queueList.innerHTML = `
                 <div class="empty-state">
-                    <p>🗂️ ยังไม่มีรายการในคิว</p>
-                    <p class="hint">ติ๊กเลือกจาก Found แล้วกด เข้าคิว AI</p>
+                    <p>🗂️ No Items in Queue</p>
+                    <p class="hint">Select posts from Found and click Queue AI</p>
                 </div>`;
             return;
         }
@@ -656,8 +656,8 @@
                 <div class="card-author">@${escapeHtml(post.author || '')}</div>
                 <div class="card-content">${escapeHtml(truncate(post.text || '', 180))}</div>
                 <div class="card-actions">
-                    <button class="btn-action queue-remove" data-id="${escapeAttr(post.id)}">ลบออกจากคิว</button>
-                    ${post.url ? `<a class="btn-action btn-link" href="${escapeAttr(post.url)}" target="_blank">🔗 ต้นฉบับ</a>` : ''}
+                    <button class="btn-action queue-remove" data-id="${escapeAttr(post.id)}">Remove from Queue</button>
+                    ${post.url ? `<a class="btn-action btn-link" href="${escapeAttr(post.url)}" target="_blank">🔗 Original</a>` : ''}
                 </div>
             </div>`).join('');
 
@@ -672,13 +672,13 @@
     function getQueueStatusLabel(status, error) {
         switch (status) {
             case 'processing':
-                return 'กำลังดำเนินการ';
+                return 'Processing';
             case 'done':
-                return 'เสร็จแล้ว';
+                return 'Done';
             case 'error':
-                return error ? `ผิดพลาด` : 'ผิดพลาด';
+                return error ? `Error` : 'Error';
             default:
-                return 'รอดำเนินการ';
+                return 'Pending';
         }
     }
 
@@ -688,8 +688,8 @@
         if (!results.length) {
             resultsPreviewList.innerHTML = `
                 <div class="empty-state">
-                    <p>📚 ยังไม่มี Results</p>
-                    <p class="hint">เมื่อ AI สร้างเสร็จ ผลลัพธ์จะถูกเก็บไว้ที่นี่</p>
+                    <p>📚 No Results Yet</p>
+                    <p class="hint">Results will be stored here after AI generation completes</p>
                 </div>`;
             return;
         }
@@ -699,14 +699,14 @@
                 <div class="card-meta">
                     <span class="card-badge badge-ready">${item.copied ? 'Copied' : 'Saved'}</span>
                     <div class="card-meta-right">
-                        <span class="char-count">${getCharCount(item.finalText || item.generatedText)} ตัว</span>
+                        <span class="char-count">${getCharCount(item.finalText || item.generatedText)} chars</span>
                         <span class="card-time">${formatTime(item.createdAt)}</span>
                     </div>
                 </div>
                 <div class="card-content result-preview-text">${escapeHtml(truncate(item.finalText || item.generatedText, 220))}</div>
                 <div class="card-actions">
                     <button class="btn-action result-copy">📋 Copy</button>
-                    ${item.sourceUrl ? `<a class="btn-action btn-link" href="${escapeAttr(item.sourceUrl)}" target="_blank">🔗 ต้นทาง</a>` : ''}
+                    ${item.sourceUrl ? `<a class="btn-action btn-link" href="${escapeAttr(item.sourceUrl)}" target="_blank">🔗 Source</a>` : ''}
                 </div>
             </div>`).join('');
 
@@ -725,7 +725,7 @@
         if (!visibleTrends.length) {
             trendList.innerHTML = `
                 <div class="empty-state">
-                    <p>📈 ยังดึง Google Trends ไม่ได้</p>
+                    <p>📈 Could not fetch Google Trends</p>
                 </div>`;
             return;
         }
@@ -734,7 +734,7 @@
             <div class="card">
                 <div class="trend-item">
                     <strong title="${escapeAttr(item.query)}">${escapeHtml(compactTrendQuery(item.query))}</strong>
-                    <button class="btn-action trend-use" data-query="${escapeAttr(compactTrendQuery(item.query))}">ใช้คำนี้</button>
+                    <button class="btn-action trend-use" data-query="${escapeAttr(compactTrendQuery(item.query))}">Use This</button>
                 </div>
             </div>`).join('');
 
@@ -779,10 +779,10 @@
 
         if (res?.success) {
             updateAiProviderUi(settings.aiProvider);
-            msg.textContent = '✅ บันทึกเรียบร้อย!';
+            msg.textContent = '✅ Settings saved!';
             msg.className = 'settings-msg msg-success';
         } else {
-            msg.textContent = '❌ บันทึกไม่สำเร็จ';
+            msg.textContent = '❌ Failed to save settings';
             msg.className = 'settings-msg msg-error';
         }
 
@@ -797,7 +797,7 @@
     $('#batchCreateAiBtn')?.addEventListener('click', async () => {
         const selectedIds = Array.from(selectedViralIds);
         if (selectedIds.length === 0) {
-            alert('กรุณาติ๊กเลือกโพสต์ที่ต้องการอย่างน้อย 1 โพสต์');
+            alert('Please select at least 1 post');
             return;
         }
 
@@ -826,7 +826,7 @@
     $('#startQueueBtn')?.addEventListener('click', async () => {
         const res = await sendMessage({ type: 'START_PROCESS_QUEUE' });
         if (!res?.success) {
-            statusText.textContent = res?.error || 'เริ่มคิวไม่สำเร็จ';
+            statusText.textContent = res?.error || 'Failed to start queue';
             statusBar.classList.remove('hidden');
             return;
         }
@@ -835,27 +835,27 @@
     });
 
     $('#clearQueueBtn')?.addEventListener('click', async () => {
-        if (!confirm('ล้างรายการในคิวทั้งหมด?')) return;
+        if (!confirm('Clear all items in the queue?')) return;
         await sendMessage({ type: 'CLEAR_PROCESS_QUEUE' });
         await loadProcessQueue();
     });
 
     $('#clearDrafts').addEventListener('click', async () => {
-        if (confirm('ลบ Draft ทั้งหมด?')) {
+        if (confirm('Delete all Drafts?')) {
             await sendMessage({ type: 'CLEAR_ALL_DRAFTS' });
             loadDrafts();
         }
     });
 
     $('#clearFound').addEventListener('click', async () => {
-        if (confirm('ลบโพสต์ Viral ที่พบทั้งหมด?')) {
+        if (confirm('Delete all found Viral posts?')) {
             await sendMessage({ type: 'CLEAR_ALL_VIRAL' });
             loadViralPosts();
         }
     });
 
     clearResultsBtn?.addEventListener('click', async () => {
-        if (confirm('ลบ Results ทั้งหมด?')) {
+        if (confirm('Delete all Results?')) {
             await sendMessage({ type: 'CLEAR_RESULTS' });
             loadResults();
         }
@@ -866,7 +866,7 @@
         refreshTrendsBtn.textContent = '...';
         await loadGoogleTrends();
         refreshTrendsBtn.disabled = false;
-        refreshTrendsBtn.textContent = '↻ รีเฟรช';
+        refreshTrendsBtn.textContent = '↻ Refresh';
     });
 
     trendsCountrySelect?.addEventListener('change', async () => {
@@ -889,8 +889,8 @@
         if (!text) return false;
 
         return text.includes('Auto Quote')
-            || /^โพสต์แล้ว \d+ รายการ เหลือ \d+ รายการ/.test(text)
-            || /^ข้าม draft /.test(text);
+            || /^Posted \d+ items?, \d+ remaining/.test(text)
+            || /^Skipped draft /.test(text);
     }
 
     function updateStatusUI(data) {
@@ -977,7 +977,7 @@
         progressPreset.textContent = current.scrollPreset || 'medium';
         progressSteps.textContent = String(current.steps || 0);
         progressFound.textContent = String(current.foundThisSession || 0);
-        progressPauseReason.textContent = current.paused ? (current.pauseReason || 'พักอยู่') : (current.active ? 'กำลังทำงาน' : 'พร้อม');
+        progressPauseReason.textContent = current.paused ? (current.pauseReason || 'Paused') : (current.active ? 'Working' : 'Ready');
     }
 
     function onDraftTextInput(event) {
@@ -989,7 +989,7 @@
     function updateCardCharCount(card, text) {
         const chip = card?.querySelector('.char-count');
         if (chip) {
-            chip.textContent = `${getCharCount(text)} ตัว`;
+            chip.textContent = `${getCharCount(text)} chars`;
         }
 
         const readinessChip = card?.querySelector('.draft-readiness-badge');
@@ -1010,7 +1010,7 @@
         trendListWrap?.classList.toggle('is-collapsed', isTrendsCollapsed);
         trendListWrap?.classList.toggle('is-expanded', !isTrendsCollapsed);
         if (toggleTrendsPanelBtn) {
-            toggleTrendsPanelBtn.textContent = isTrendsCollapsed ? 'ขยาย' : 'ย่อ';
+            toggleTrendsPanelBtn.textContent = isTrendsCollapsed ? 'Expand' : 'Collapse';
             toggleTrendsPanelBtn.setAttribute('aria-expanded', String(!isTrendsCollapsed));
         }
     }
@@ -1035,18 +1035,18 @@
     function getDraftStatusBadge(draft) {
         switch (draft.status) {
             case 'auto_quote_queued':
-                return { label: '⏳ รอคิว Auto Quote', className: 'badge-posted', title: 'ระบบจะโพสต์รายการนี้อัตโนมัติตามคิว' };
+                return { label: '⏳ Auto Quote Queued', className: 'badge-posted', title: 'This item will be auto-posted according to the queue' };
             case 'auto_quote_posting':
             case 'posting':
-                return { label: '🚀 กำลังโพสต์', className: 'badge-ready', title: 'กำลังเปิด X และกดโพสต์ให้อัตโนมัติ' };
+                return { label: '🚀 Posting', className: 'badge-ready', title: 'Opening X and auto-posting' };
             case 'posted':
-                return { label: '✅ โพสต์แล้ว', className: 'badge-posted', title: draft.postedAt ? `โพสต์เมื่อ ${formatTime(draft.postedAt)}` : 'โพสต์เสร็จแล้ว' };
+                return { label: '✅ Posted', className: 'badge-posted', title: draft.postedAt ? `Posted ${formatTime(draft.postedAt)}` : 'Posted successfully' };
             case 'post_error':
-                return { label: '❌ โพสต์ไม่สำเร็จ', className: 'badge-quote-missing', title: draft.postError || 'โปรดลองใหม่อีกครั้ง' };
+                return { label: '❌ Post Failed', className: 'badge-quote-missing', title: draft.postError || 'Please try again' };
             case 'pending_post':
-                return { label: '🕒 เตรียมโพสต์', className: 'badge-posted', title: 'ระบบกำลังเตรียมหน้า Compose' };
+                return { label: '🕒 Preparing', className: 'badge-posted', title: 'System is preparing the Compose page' };
             default:
-                return { label: '✏️ พร้อมโพสต์', className: 'badge-ready', title: 'พร้อมส่งไปโพสต์บน X' };
+                return { label: '✏️ Ready to Post', className: 'badge-ready', title: 'Ready to post on X' };
         }
     }
 
@@ -1068,7 +1068,7 @@
         if (!hasQuoteSource) missing.push('quote');
         if (!hasBullet) missing.push('bullet');
         if (!isExactLength) missing.push('280');
-        return { label: `ต้องเช็ก: ${missing.join(', ')}`, className: 'badge-quote-missing' };
+        return { label: `Check: ${missing.join(', ')}`, className: 'badge-quote-missing' };
     }
 
     // =============================================
@@ -1087,10 +1087,10 @@
         const diffMs = now - date;
         const diffMin = Math.floor(diffMs / 60000);
 
-        if (diffMin < 1) return 'เมื่อกี้';
-        if (diffMin < 60) return `${diffMin} นาทีที่แล้ว`;
-        if (diffMin < 1440) return `${Math.floor(diffMin / 60)} ชม.ที่แล้ว`;
-        return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+        if (diffMin < 1) return 'Just now';
+        if (diffMin < 60) return `${diffMin} min ago`;
+        if (diffMin < 1440) return `${Math.floor(diffMin / 60)}h ago`;
+        return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
     }
 
     function truncate(text, maxLen) {
@@ -1109,7 +1109,7 @@
         }
 
         const stopTokens = new Set([
-            'วันนี้', 'ล่าสุด', 'อัปเดต', 'เปิดชื่อ', 'เตือน', 'ระวัง', 'เผย', 'ชี้', 'พบ', 'พร้อม', 'หลัง', 'ก่อน',
+            'today', 'latest', 'update', 'warning', 'alert', 'reveals', 'found', 'ready', 'after', 'before',
             'the', 'a', 'an', 'of', 'for', 'to', 'and'
         ]);
         const tokens = normalized.split(' ')
@@ -1204,21 +1204,21 @@
                     <span class="topic-number">#${i + 1}</span>
                     <span class="topic-row-status">${getTopicStatusLabel(t)}</span>
                     <div class="topic-row-actions">
-                        ${i > 0 ? `<button class="topic-move-up btn-icon" data-index="${i}" title="\u0e02\u0e36\u0e49\u0e19">\u25b2</button>` : ''}
-                        ${i < topics.length - 1 ? `<button class="topic-move-down btn-icon" data-index="${i}" title="\u0e25\u0e07">\u25bc</button>` : ''}
-                        <button class="topic-remove btn-icon" data-index="${i}" title="\u0e25\u0e1a">\u2715</button>
+                        ${i > 0 ? `<button class="topic-move-up btn-icon" data-index="${i}" title="Up">\u25b2</button>` : ''}
+                        ${i < topics.length - 1 ? `<button class="topic-move-down btn-icon" data-index="${i}" title="Down">\u25bc</button>` : ''}
+                        <button class="topic-remove btn-icon" data-index="${i}" title="Remove">\u2715</button>
                     </div>
                 </div>
-                <input type="text" class="topic-field topic-query" placeholder="\u0e2b\u0e31\u0e27\u0e02\u0e49\u0e2d \u0e40\u0e0a\u0e48\u0e19 #aitools" value="${escapeAttr(normalizeCampaignTopic(t.topic || ''))}" data-index="${i}" />
-                <input type="text" class="topic-field topic-product" placeholder="\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32" value="${escapeAttr(t.productName || '')}" data-index="${i}" />
-                <input type="url" class="topic-field topic-link" placeholder="\u0e25\u0e34\u0e07\u0e01\u0e4c\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32" value="${escapeAttr(t.productLink || '')}" data-index="${i}" />
-                <button class="btn-small affiliate-shortcut-btn topic-affiliate-btn" type="button" data-index="${i}">เชื่อมต่อลิงก์ Shopee Affiliate</button>
+                <input type="text" class="topic-field topic-query" placeholder="Topic e.g. #aitools" value="${escapeAttr(normalizeCampaignTopic(t.topic || ''))}" data-index="${i}" />
+                <input type="text" class="topic-field topic-product" placeholder="Product" value="${escapeAttr(t.productName || '')}" data-index="${i}" />
+                <input type="url" class="topic-field topic-link" placeholder="Product link" value="${escapeAttr(t.productLink || '')}" data-index="${i}" />
+                <button class="btn-small affiliate-shortcut-btn topic-affiliate-btn" type="button" data-index="${i}">Link Shopee Affiliate</button>
                 <div class="topic-row-footer">
-                    <label class="topic-count-label">\u0e40\u0e1b\u0e49\u0e32\u0e2b\u0e21\u0e32\u0e22:
+                    <label class="topic-count-label">Target:
                         <input type="number" class="topic-field topic-count" value="${t.targetPostCount || 3}" min="1" max="50" data-index="${i}" />
-                        \u0e42\u0e1e\u0e2a\u0e15\u0e4c
+                        posts
                     </label>
-                    ${t.generatedCount ? `<span class="topic-progress">\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e41\u0e25\u0e49\u0e27 ${t.generatedCount}/${t.targetPostCount}</span>` : ''}
+                    ${t.generatedCount ? `<span class="topic-progress">Generated ${t.generatedCount}/${t.targetPostCount}</span>` : ''}
                     ${t.quotedCount ? `<span class="topic-progress">Quote ${t.quotedCount}</span>` : ''}
                 </div>
             </div>
@@ -1260,7 +1260,7 @@
 
     function getTopicStatusLabel(topic) {
         if (!topic.status || topic.status === 'pending') return '';
-        const labels = { running: '\ud83d\udd04 \u0e01\u0e33\u0e25\u0e31\u0e07\u0e17\u0e33', completed: '\u2705 \u0e04\u0e23\u0e1a\u0e41\u0e25\u0e49\u0e27', error: '\u274c \u0e1c\u0e34\u0e14\u0e1e\u0e25\u0e32\u0e14', 'waiting-source': '\u23f3 \u0e23\u0e2d\u0e42\u0e1e\u0e2a\u0e15\u0e4c' };
+        const labels = { running: '\ud83d\udd04 In Progress', completed: '\u2705 Completed', error: '\u274c Error', 'waiting-source': '\u23f3 Waiting for Posts' };
         return labels[topic.status] || '';
     }
 
@@ -1354,19 +1354,19 @@
         const totalTarget = campaign.topics.reduce((s, t) => s + t.targetPostCount, 0);
         const totalGenerated = campaign.topics.reduce((s, t) => s + (t.generatedCount || 0), 0);
         const totalQuoted = campaign.topics.reduce((s, t) => s + (t.quotedCount || 0), 0);
-        const phaseLabels = { setup: '\u0e15\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32', collecting: '\u0e40\u0e01\u0e47\u0e1a\u0e42\u0e1e\u0e2a\u0e15\u0e4c\u0e40\u0e02\u0e49\u0e32 Found/Queue', generating: '\u0e2a\u0e23\u0e49\u0e32\u0e07 Draft \u0e08\u0e32\u0e01 Queue', quoting: 'Quote \u0e2d\u0e31\u0e15\u0e42\u0e19\u0e21\u0e31\u0e15\u0e34', completed: '\u0e40\u0e2a\u0e23\u0e47\u0e08\u0e2a\u0e34\u0e49\u0e19' };
+        const phaseLabels = { setup: 'Setup', collecting: 'Collecting posts to Found/Queue', generating: 'Creating Drafts from Queue', quoting: 'Auto Quote', completed: 'Completed' };
 
         monitorContent.innerHTML = `
             <div class="monitor-grid">
-                <div class="monitor-item"><span class="monitor-label">\u0e02\u0e31\u0e49\u0e19\u0e15\u0e2d\u0e19</span><strong>${phaseLabels[campaign.phase] || campaign.phase}</strong></div>
-                <div class="monitor-item"><span class="monitor-label">Draft \u0e23\u0e27\u0e21</span><strong>${totalGenerated} / ${totalTarget}</strong></div>
-                <div class="monitor-item"><span class="monitor-label">Quote \u0e23\u0e27\u0e21</span><strong>${totalQuoted}</strong></div>
-                ${activeTopic ? `<div class="monitor-item"><span class="monitor-label">\u0e2b\u0e31\u0e27\u0e02\u0e49\u0e2d\u0e1b\u0e31\u0e08\u0e08\u0e38\u0e1a\u0e31\u0e19</span><strong>${escapeHtml(activeTopic.topic)}</strong></div>` : ''}
+                <div class="monitor-item"><span class="monitor-label">Phase</span><strong>${phaseLabels[campaign.phase] || campaign.phase}</strong></div>
+                <div class="monitor-item"><span class="monitor-label">Total Drafts</span><strong>${totalGenerated} / ${totalTarget}</strong></div>
+                <div class="monitor-item"><span class="monitor-label">Total Quotes</span><strong>${totalQuoted}</strong></div>
+                ${activeTopic ? `<div class="monitor-item"><span class="monitor-label">Current Topic</span><strong>${escapeHtml(activeTopic.topic)}</strong></div>` : ''}
             </div>
             <div class="monitor-topics">
                 ${campaign.topics.map((t, i) => `
                     <div class="monitor-topic-row ${i === campaign.activeTopicIndex && campaign.status === 'running' ? 'active' : ''}">
-                        <span class="monitor-topic-name">${escapeHtml(t.topic || '(\u0e27\u0e48\u0e32\u0e07)')}</span>
+                        <span class="monitor-topic-name">${escapeHtml(t.topic || '(empty)')}</span>
                         <span class="monitor-topic-progress">${t.generatedCount}/${t.targetPostCount} draft</span>
                         <span class="monitor-topic-status">${getTopicStatusLabel(t)}</span>
                     </div>
@@ -1381,7 +1381,7 @@
     $('#campaignStartBtn')?.addEventListener('click', async () => {
         await saveCampaignFromUI();
         const res = await sendMessage({ type: 'START_CAMPAIGN' });
-        if (!res?.success) { alert(res?.error || '\u0e40\u0e23\u0e34\u0e48\u0e21 Campaign \u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08'); return; }
+        if (!res?.success) { alert(res?.error || 'Failed to start Campaign'); return; }
         currentCampaign = res.data;
         renderCampaign();
         switchToTab('campaign');
@@ -1403,13 +1403,13 @@
     });
 
     $('#campaignResetBtn')?.addEventListener('click', async () => {
-        if (!confirm('\u0e23\u0e35\u0e40\u0e0b\u0e47\u0e15\u0e08\u0e30\u0e25\u0e1a progress \u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14 \u0e22\u0e37\u0e19\u0e22\u0e31\u0e19?')) return;
+        if (!confirm('Reset will clear all progress. Confirm?')) return;
         const res = await sendMessage({ type: 'RESET_CAMPAIGN' });
         if (res?.success) { currentCampaign = res.data; renderCampaign(); }
     });
 
     $('#campaignDeleteBtn')?.addEventListener('click', async () => {
-        if (!confirm('\u0e25\u0e1a Campaign \u0e19\u0e35\u0e49\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14?')) return;
+        if (!confirm('Delete this entire Campaign?')) return;
         await sendMessage({ type: 'DELETE_CAMPAIGN' });
         currentCampaign = null;
         renderCampaign();

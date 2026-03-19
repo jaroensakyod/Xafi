@@ -291,7 +291,7 @@ async function loadAutoScoutState() {
 function assertFullAutoSource(payload) {
     const source = typeof payload?.source === 'string' ? payload.source.trim() : '';
     if (source !== 'full-auto') {
-        throw new Error('Auto Scout ถูกจำกัดให้สั่งผ่านหน้า Full Auto เท่านั้น');
+        throw new Error('Auto Scout is restricted to Full Auto mode only');
     }
 }
 
@@ -443,7 +443,7 @@ async function handleMessage(message, sender) {
 
             await broadcastStatus(
                 isAutoScoutEnabled ? 'processing' : 'done',
-                isAutoScoutEnabled ? `เปิด Auto Scout แล้ว: ${autoScoutQuery || 'ยังไม่ตั้งคำค้น'}` : 'ปิด Auto Scout แล้ว'
+                isAutoScoutEnabled ? `Auto Scout enabled: ${autoScoutQuery || 'no search query set'}` : 'Auto Scout disabled'
             );
             return { success: true };
 
@@ -565,9 +565,9 @@ async function saveViralPost(post) {
     if (limits.sessionLimitReached || limits.dailyLimitReached) {
         const campaign = await getCampaign();
         if (campaign?.status === 'running' && campaign.phase === 'collecting') {
-            await pauseCampaignForLimit(limits.dailyLimitReached ? 'ถึง daily limit แล้ว' : 'ถึง session limit แล้ว');
+            await pauseCampaignForLimit(limits.dailyLimitReached ? 'Daily limit reached' : 'Session limit reached');
         }
-        await broadcastStatus('done', limits.dailyLimitReached ? 'ถึง daily limit แล้ว' : 'ถึง session limit แล้ว');
+        await broadcastStatus('done', limits.dailyLimitReached ? 'Daily limit reached' : 'Session limit reached');
         return { success: false, limitReached: true };
     }
 
@@ -600,7 +600,7 @@ async function saveViralPost(post) {
 
     await chrome.storage.local.set({ viralPosts });
     const counters = await incrementDiscoveryCounters();
-    await broadcastStatus('found', `พบโพสต์ Viral ใหม่: ${post.viewCountText}`);
+    await broadcastStatus('found', `New Viral post found: ${post.viewCountText}`);
 
     if (campaign?.status === 'running' && campaign.phase === 'collecting') {
         if (activeTopic && (activeTopic.foundCount || 0) < activeTopic.targetPostCount && activeTopic.status !== 'error') {
@@ -726,7 +726,7 @@ async function queueAIProcess(data) {
 async function startProcessQueueFromStorage(options = {}) {
     const campaignId = typeof options?.campaignId === 'string' ? options.campaignId.trim() : '';
     if (isProcessingAIQueue || pendingPrompt) {
-        return { success: false, error: 'คิวกำลังทำงานอยู่แล้ว' };
+        return { success: false, error: 'Queue is already running' };
     }
 
     const { processQueue = [] } = await chrome.storage.local.get('processQueue');
@@ -737,7 +737,7 @@ async function startProcessQueueFromStorage(options = {}) {
     });
 
     if (!itemsToRun.length) {
-        return { success: false, error: 'ไม่มีรายการในคิว' };
+        return { success: false, error: 'No items in queue' };
     }
 
     for (const item of itemsToRun) {
@@ -752,8 +752,8 @@ async function startProcessQueueFromStorage(options = {}) {
     await broadcastStatus(
         'processing',
         campaignId
-            ? `เริ่มสร้างคอนเทนต์ตามคิวของ campaign ${itemsToRun.length} รายการ`
-            : `เริ่มสร้างคอนเทนต์ตามคิว ${itemsToRun.length} รายการ`
+            ? `Starting content generation queue for campaign: ${itemsToRun.length} items`
+            : `Starting content generation queue: ${itemsToRun.length} items`
     );
 
     if (!isProcessingAIQueue) {
@@ -766,7 +766,7 @@ async function startProcessQueueFromStorage(options = {}) {
 async function startAIQueue() {
     if (aiProcessQueue.length === 0) {
         isProcessingAIQueue = false;
-        await broadcastStatus('done', 'สร้างคอนเทนต์ทั้งหมดเสร็จสิ้นแล้ว!');
+        await broadcastStatus('done', 'All content generation completed!');
 
         const campaign = await getCampaign();
         if (campaign?.status === 'running' && campaign.phase === 'generating') {
@@ -788,17 +788,17 @@ async function startAIQueue() {
     try {
         const result = await startAIProcessing(nextData);
         if (result?.success === false) {
-            throw new Error(result.error || 'เริ่มสร้างคอนเทนต์ไม่สำเร็จ');
+            throw new Error(result.error || 'Failed to start content generation');
         }
     } catch (error) {
         await updateProcessQueueItem(nextData?.id, {
             queueStatus: 'error',
-            queueError: error.message || 'เริ่มสร้างคอนเทนต์ไม่สำเร็จ'
+            queueError: error.message || 'Failed to start content generation'
         });
 
         pendingPrompt = null;
         isProcessingAIQueue = false;
-        await broadcastStatus('error', error.message || 'เริ่มสร้างคอนเทนต์ไม่สำเร็จ');
+        await broadcastStatus('error', error.message || 'Failed to start content generation');
 
         setTimeout(() => {
             startAIQueue();
@@ -826,7 +826,7 @@ async function startAIProcessing(data) {
         aiProvider: aiProvider.key
     };
 
-    await broadcastStatus('processing', `กำลังเปิด ${aiProvider.label}...`);
+    await broadcastStatus('processing', `Opening ${aiProvider.label}...`);
 
     // เช็คว่ามีหน้าต่าง AI provider ที่ตรงกับที่เลือกไว้เปิดอยู่หรือไม่
     if (aiWindowId) {
@@ -868,14 +868,14 @@ async function startAIProcessing(data) {
 
         return { success: true };
     } catch (err) {
-        await broadcastStatus('error', `เปิด ${aiProvider.label} ไม่สำเร็จ: ${err.message}`);
+        await broadcastStatus('error', `Failed to open ${aiProvider.label}: ${err.message}`);
         return { success: false, error: err.message };
     }
 }
 
 async function dispatchPromptToAi(settings, retries = 8, delayMs = 800) {
     if (!pendingPrompt?.prompt) {
-        throw new Error('ไม่มี prompt ที่รอส่งไปยัง Grok');
+        throw new Error('No pending prompt for Grok');
     }
 
     if (!Number.isInteger(aiTabId)) {
@@ -883,7 +883,7 @@ async function dispatchPromptToAi(settings, retries = 8, delayMs = 800) {
     }
 
     if (!Number.isInteger(aiTabId)) {
-        throw new Error('หาแท็บ Grok ไม่เจอ');
+        throw new Error('Cannot find Grok tab');
     }
 
     let lastError = null;
@@ -905,7 +905,7 @@ async function dispatchPromptToAi(settings, retries = 8, delayMs = 800) {
         }
     }
 
-    throw new Error(`ส่ง prompt ไปที่ Grok ไม่สำเร็จ: ${lastError?.message || 'unknown error'}`);
+    throw new Error(`Failed to send prompt to Grok: ${lastError?.message || 'unknown error'}`);
 }
 
 async function waitForTabComplete(tabId, timeout = 15000) {
@@ -972,7 +972,7 @@ async function onAIPageReady(tabId = null) {
     }
 
     const settings = await ensureSettings();
-    await broadcastStatus('processing', 'กำลังพิมพ์ Prompt...');
+    await broadcastStatus('processing', 'Typing Prompt...');
 
     if (aiTabId) {
         await dispatchPromptToAi(settings, 12, 800);
@@ -987,7 +987,7 @@ async function forceStopAiProcessing() {
     if (currentPrompt?.queueItemId) {
         await updateProcessQueueItem(currentPrompt.queueItemId, {
             queueStatus: 'error',
-            queueError: 'ผู้ใช้บังคับหยุด AI',
+            queueError: 'User force-stopped AI',
             completedAt: new Date().toISOString()
         });
     }
@@ -998,12 +998,12 @@ async function forceStopAiProcessing() {
     processingSourceTabId = null;
 
     await closeAiWindowIfIdle(true);
-    await broadcastStatus('done', 'บังคับหยุด AI แล้ว');
+    await broadcastStatus('done', 'AI force-stopped');
 
     const campaign = await getCampaign();
     if (campaign?.status === 'running' && campaign.phase === 'generating') {
         campaign.status = 'paused';
-        campaign.lastError = 'ผู้ใช้บังคับหยุด AI';
+        campaign.lastError = 'User force-stopped AI';
         await saveCampaign(campaign);
     }
 
@@ -1092,7 +1092,7 @@ async function onAIResponseReady(data) {
 
     pendingPrompt = null;
 
-    await broadcastStatus('done', `AI สร้างข้อความเสร็จแล้ว! (รอคิว: ${aiProcessQueue.length})`);
+    await broadcastStatus('done', `AI generation complete! (queue: ${aiProcessQueue.length})`);
 
     // โหลดหน้า Results อัตโนมัติ (เฉพาะเวลากดทีละอัน หรือทำคิวสุดท้ายเสร็จ)
     if (aiProcessQueue.length === 0) {
@@ -1341,7 +1341,7 @@ async function postToX(data) {
                     break;
                 }
 
-                lastError = new Error(response?.error || 'ส่งโพสต์ไปที่ X ไม่สำเร็จ');
+                lastError = new Error(response?.error || 'Failed to post to X');
             } catch (error) {
                 lastError = error;
             }
@@ -1351,7 +1351,7 @@ async function postToX(data) {
         }
 
         if (!response?.success) {
-            throw lastError || new Error('ส่งโพสต์ไปที่ X ไม่สำเร็จ');
+            throw lastError || new Error('Failed to post to X');
         }
 
         await updateDraft({
@@ -1370,7 +1370,7 @@ async function postToX(data) {
         await updateDraft({
             id: data.id,
             status: 'post_error',
-            postError: error.message || 'ส่งโพสต์ไม่สำเร็จ'
+            postError: error.message || 'Failed to post'
         });
         throw error;
     }
@@ -1407,7 +1407,7 @@ async function scheduleChromeAlarm(name, delayMs) {
     return Date.now() + safeDelayMs;
 }
 
-async function scheduleAutoQuoteRetry(delayMs = 5000, reason = 'รอ AI provider ว่างก่อนเริ่ม Auto Quote') {
+async function scheduleAutoQuoteRetry(delayMs = 5000, reason = 'Waiting for AI provider before starting Auto Quote') {
     const nextRunAt = await scheduleChromeAlarm(AUTO_QUOTE_RETRY_ALARM, delayMs);
     await updateAutoQuoteState({
         active: true,
@@ -1435,10 +1435,10 @@ function formatAutoQuoteDelay(delayMs) {
     const seconds = totalSeconds % 60;
 
     if (minutes <= 0) {
-        return `${seconds} วินาที`;
+        return `${seconds} seconds`;
     }
 
-    return `${minutes} นาที ${seconds} วินาที`;
+    return `${minutes} min ${seconds} sec`;
 }
 
 function triggerDeferredAutoQuoteStart(delayMs = 500) {
@@ -1494,8 +1494,8 @@ async function runAutoQuoteCycle(trigger = 'manual') {
         }
 
         if (isAiBusy()) {
-            await broadcastStatus('processing', `${aiProvider.label} ยังทำงานอยู่ Auto Quote จะเริ่มให้อัตโนมัติเมื่อคิวว่าง`);
-            await scheduleAutoQuoteRetry(5000, `รอ ${aiProvider.label} ว่างก่อนเริ่ม Auto Quote`);
+            await broadcastStatus('processing', `${aiProvider.label} is still working. Auto Quote will start automatically when queue is free`);
+            await scheduleAutoQuoteRetry(5000, `Waiting for ${aiProvider.label} to finish before starting Auto Quote`);
             autoQuoteCycleInFlight = false;
             return { success: true, deferred: true };
         }
@@ -1508,10 +1508,10 @@ async function runAutoQuoteCycle(trigger = 'manual') {
         const pendingCount = await countPendingAutoQuoteDrafts();
         if (pendingCount === 0) {
             await finishAutoQuote({
-                lastError: 'ไม่มี draft ที่พร้อมสำหรับ Auto Quote',
-                message: 'ไม่มี draft ที่พร้อมสำหรับ Auto Quote'
-            }, 'error', 'ไม่มี draft ที่พร้อมสำหรับ Auto Quote');
-            return { success: false, error: 'ไม่มี draft ที่พร้อมสำหรับ Auto Quote' };
+                lastError: 'No drafts ready for Auto Quote',
+                message: 'No drafts ready for Auto Quote'
+            }, 'error', 'No drafts ready for Auto Quote');
+            return { success: false, error: 'No drafts ready for Auto Quote' };
         }
 
         const { drafts = [] } = await chrome.storage.local.get('drafts');
@@ -1523,8 +1523,8 @@ async function runAutoQuoteCycle(trigger = 'manual') {
         if (!readyDraft) {
             await finishAutoQuote({
                 lastError: '',
-                message: 'Auto Quote ไม่มี draft ที่รอโพสต์แล้ว'
-            }, 'done', 'Auto Quote ไม่มี draft ที่รอโพสต์แล้ว');
+                message: 'Auto Quote finished — no more drafts to post'
+            }, 'done', 'Auto Quote finished — no more drafts to post');
             return { success: true, done: true };
         }
 
@@ -1538,9 +1538,9 @@ async function runAutoQuoteCycle(trigger = 'manual') {
             currentDraftId: readyDraft.id,
             nextRunAt: 0,
             lastError: '',
-            message: `กำลังโพสต์ draft ${readyDraft.id}`
+            message: `Posting draft ${readyDraft.id}`
         });
-        await broadcastStatus('processing', `Auto Quote กำลังโพสต์ draft ${readyDraft.id}`);
+        await broadcastStatus('processing', `Auto Quote posting draft ${readyDraft.id}`);
         await postToX({ id: readyDraft.id, autoQuoteRun: true });
 
         const defaultMin = parseInt(settings?.autoQuoteMinMinutes || 2, 10);
@@ -1555,8 +1555,8 @@ async function runAutoQuoteCycle(trigger = 'manual') {
                 lastPostedDraftId: readyDraft.id,
                 lastPostedAt: postedAt,
                 lastError: '',
-                message: `Auto Quote โพสต์ครบแล้ว • สำเร็จ ${postedCount} • ไม่สำเร็จ ${Number(currentState.failedCount || 0)}`
-            }, 'done', 'Auto Quote โพสต์ครบทุก draft แล้ว');
+                message: `Auto Quote completed • Succeeded ${postedCount} • Failed ${Number(currentState.failedCount || 0)}`
+            }, 'done', 'Auto Quote finished posting all drafts');
             return { success: true, done: true };
         }
 
@@ -1568,17 +1568,17 @@ async function runAutoQuoteCycle(trigger = 'manual') {
             lastPostedDraftId: readyDraft.id,
             lastPostedAt: postedAt,
             lastError: '',
-            message: `โพสต์สำเร็จ ${postedCount} รายการ เหลือ ${remainingCount} รายการ`
+            message: `Posted ${postedCount} items, ${remainingCount} remaining`
         });
 
         autoQuoteCycleInFlight = false;
-        await broadcastStatus('processing', `โพสต์แล้ว 1 รายการ เหลือ ${remainingCount} รายการ รอ ${formatAutoQuoteDelay(nextRunAt - Date.now())}`);
+        await broadcastStatus('processing', `Posted 1 item, ${remainingCount} remaining. Wait ${formatAutoQuoteDelay(nextRunAt - Date.now())}`);
         return { success: true, scheduled: true, nextRunAt };
     } catch (err) {
         console.error('[XVR] Auto Quote Cycle Error:', err);
 
         if (workingDraft?.id) {
-            const reason = err.message || 'ส่งโพสต์ไม่สำเร็จ';
+            const reason = err.message || 'Failed to post';
             const failedCount = Number(cycleState?.failedCount || 0) + 1;
             const skippedCount = Number(cycleState?.skippedCount || 0) + 1;
             const postedCount = Number(cycleState?.postedCount || 0);
@@ -1592,8 +1592,8 @@ async function runAutoQuoteCycle(trigger = 'manual') {
                     lastFailedDraftId: workingDraft.id,
                     lastFailedReason: reason,
                     lastError: '',
-                    message: `Auto Quote จบแล้ว • สำเร็จ ${postedCount} • ไม่สำเร็จ ${failedCount}`
-                }, 'done', `ข้าม draft ${workingDraft.id} เพราะ ${reason}`);
+                    message: `Auto Quote done • Succeeded ${postedCount} • Failed ${failedCount}`
+                }, 'done', `Skipped draft ${workingDraft.id} due to ${reason}`);
                 return { success: true, done: true, skippedFailedDraft: true };
             }
 
@@ -1606,11 +1606,11 @@ async function runAutoQuoteCycle(trigger = 'manual') {
                 lastFailedDraftId: workingDraft.id,
                 lastFailedReason: reason,
                 lastError: '',
-                message: `ข้าม draft ${workingDraft.id} เพราะ ${reason} • เหลือ ${remainingCount} รายการ`
+                message: `Skipped draft ${workingDraft.id} due to ${reason} • ${remainingCount} remaining`
             });
 
             autoQuoteCycleInFlight = false;
-            await broadcastStatus('processing', `ข้าม draft ${workingDraft.id} เพราะ ${reason} • เหลือ ${remainingCount} รายการ`);
+            await broadcastStatus('processing', `Skipped draft ${workingDraft.id} due to ${reason} • ${remainingCount} remaining`);
             return { success: true, scheduled: true, nextRunAt, skippedFailedDraft: true };
         }
 
@@ -1619,12 +1619,12 @@ async function runAutoQuoteCycle(trigger = 'manual') {
             active: true,
             phase: 'retrying',
             nextRunAt,
-            lastError: err.message || 'Auto Quote ทำงานไม่สำเร็จ',
-            message: 'Auto Quote มีปัญหา กำลังลองใหม่อัตโนมัติ'
+            lastError: err.message || 'Auto Quote failed',
+            message: 'Auto Quote encountered an error, retrying automatically'
         });
         autoQuoteCycleInFlight = false;
-        await broadcastStatus('error', err.message || 'Auto Quote ทำงานไม่สำเร็จ');
-        return { success: false, error: err.message || 'Auto Quote ทำงานไม่สำเร็จ' };
+        await broadcastStatus('error', err.message || 'Auto Quote failed');
+        return { success: false, error: err.message || 'Auto Quote failed' };
     }
 }
 
@@ -1674,7 +1674,7 @@ async function startAutoQuoteLoop() {
         lastError: '',
         lastFailedDraftId: '',
         lastFailedReason: '',
-        message: 'กำลังเตรียม Auto Quote'
+        message: 'Preparing Auto Quote'
     });
 
     return runAutoQuoteCycle('manual');
@@ -1693,9 +1693,9 @@ async function stopAutoQuoteLoop() {
         currentDraftId: '',
         nextRunAt: 0,
         lastError: '',
-        message: 'หยุด Auto Quote แล้ว'
+        message: 'Auto Quote stopped'
     });
-    await broadcastStatus('done', 'หยุด Auto Quote แล้ว');
+    await broadcastStatus('done', 'Auto Quote stopped');
     return { success: true };
 }
 
@@ -1736,7 +1736,7 @@ async function saveCampaign(data) {
 async function handleSaveCampaign(data) {
     const existing = await getCampaign();
     if (existing?.status === 'running') {
-        return { success: false, error: 'ไม่สามารถแก้ไขขณะ campaign กำลังทำงาน' };
+        return { success: false, error: 'Cannot edit while campaign is running' };
     }
     const topics = (data.topics || []).map(t => {
         const prev = existing?.topics?.find(e => e.id === t.id) || {};
@@ -1752,7 +1752,7 @@ async function handleSaveCampaign(data) {
     const campaign = {
         ...(existing || createCampaignDefaults()),
         id: existing?.id || generateId(),
-        name: data.name || existing?.name || 'Campaign ' + new Date().toLocaleDateString('th-TH'),
+        name: data.name || existing?.name || 'Campaign ' + new Date().toLocaleDateString('en-US'),
         topicExecutionMode: data.topicExecutionMode === 'drain-topic' ? 'drain-topic' : 'round-robin',
         quoteDistributionMode: data.quoteDistributionMode === 'alternate-products' ? 'alternate-products' : 'sequential-by-product',
         topics, createdAt: existing?.createdAt || new Date().toISOString()
@@ -1764,13 +1764,13 @@ async function handleSaveCampaign(data) {
 
 async function startCampaign() {
     const campaign = await getCampaign();
-    if (!campaign) return { success: false, error: 'ยังไม่มี campaign' };
-    if (!campaign.topics.length) return { success: false, error: 'ต้องมีอย่างน้อย 1 หัวข้อ' };
+    if (!campaign) return { success: false, error: 'No campaign found' };
+    if (!campaign.topics.length) return { success: false, error: 'At least 1 topic is required' };
     if (campaign.status === 'running') return { success: true, data: campaign };
     for (const topic of campaign.topics) {
-        if (!topic.topic.trim()) return { success: false, error: 'หัวข้อห้ามว่าง' };
+        if (!topic.topic.trim()) return { success: false, error: 'Topic cannot be empty' };
     }
-    if (isAiBusy()) return { success: false, error: 'AI กำลังทำงานอยู่ กรุณารอให้เสร็จก่อน' };
+    if (isAiBusy()) return { success: false, error: 'AI is currently working, please wait' };
     campaign.status = 'running';
     campaign.phase = 'collecting';
     campaign.startedAt = campaign.startedAt || new Date().toISOString();
@@ -1786,37 +1786,37 @@ async function startCampaign() {
         errorMessage: ''
     }));
     await saveCampaign(campaign);
-    await broadcastStatus('processing', 'เริ่ม Full Automate Campaign');
+    await broadcastStatus('processing', 'Starting Full Automate Campaign');
     await runCampaignTick();
     return { success: true, data: campaign };
 }
 
 async function pauseCampaign() {
     const campaign = await getCampaign();
-    if (!campaign || campaign.status !== 'running') return { success: false, error: 'Campaign ไม่ได้กำลังทำงาน' };
+    if (!campaign || campaign.status !== 'running') return { success: false, error: 'Campaign is not running' };
     campaign.status = 'paused';
     campaign.topics = campaign.topics.map(t => ({ ...t, status: t.status === 'running' ? 'pending' : t.status }));
     await saveCampaign(campaign);
     await stopAutoScoutForCampaign();
     await clearAutoQuoteAlarm(CAMPAIGN_ALARM);
-    await broadcastStatus('done', 'พัก Campaign แล้ว');
+    await broadcastStatus('done', 'Campaign paused');
     return { success: true, data: campaign };
 }
 
 async function resumeCampaign() {
     const campaign = await getCampaign();
-    if (!campaign || campaign.status !== 'paused') return { success: false, error: 'Campaign ไม่ได้อยู่ในสถานะพัก' };
+    if (!campaign || campaign.status !== 'paused') return { success: false, error: 'Campaign is not paused' };
     campaign.status = 'running';
     campaign.lastError = '';
     await saveCampaign(campaign);
-    await broadcastStatus('processing', 'ทำ Campaign ต่อ');
+    await broadcastStatus('processing', 'Resuming Campaign');
     await runCampaignTick();
     return { success: true, data: campaign };
 }
 
 async function stopCampaign() {
     const campaign = await getCampaign();
-    if (!campaign) return { success: false, error: 'ไม่มี campaign' };
+    if (!campaign) return { success: false, error: 'No campaign found' };
     await stopAutoScoutForCampaign();
     await stopAutoQuoteLoop();
     await clearAutoQuoteAlarm(CAMPAIGN_ALARM);
@@ -1826,13 +1826,13 @@ async function stopCampaign() {
         ...t, status: t.status === 'running' ? (t.generatedCount >= t.targetPostCount ? 'completed' : 'pending') : t.status
     }));
     await saveCampaign(campaign);
-    await broadcastStatus('done', 'หยุด Campaign แล้ว');
+    await broadcastStatus('done', 'Campaign stopped');
     return { success: true, data: campaign };
 }
 
 async function resetCampaign() {
     const campaign = await getCampaign();
-    if (!campaign) return { success: false, error: 'ไม่มี campaign' };
+    if (!campaign) return { success: false, error: 'No campaign found' };
     if (campaign.status === 'running') await stopCampaign();
     campaign.status = 'draft';
     campaign.phase = 'setup';
@@ -1909,7 +1909,7 @@ async function runCampaignCollectPhase(campaign) {
             status: t.status === 'error' ? 'error' : ((t.generatedCount || 0) >= t.targetPostCount ? 'completed' : 'queued')
         }));
         await saveCampaign(campaign);
-        await broadcastStatus('processing', 'เก็บโพสต์ครบแล้ว เริ่มสร้างคอนเทนต์จาก Queue');
+        await broadcastStatus('processing', 'Collection complete, starting content generation from Queue');
         await startProcessQueueFromStorage({ campaignId: campaign.id });
         return;
     }
@@ -1955,12 +1955,12 @@ async function runCampaignGeneratePhase(campaign) {
         if (!hasGenerated) {
             campaign.status = 'completed'; campaign.phase = 'completed'; campaign.completedAt = new Date().toISOString();
             await saveCampaign(campaign);
-            await broadcastStatus('done', 'Campaign เสร็จ - ไม่มี draft ที่สร้างได้');
+            await broadcastStatus('done', 'Campaign completed - no drafts could be generated');
             return;
         }
         campaign.phase = 'quoting';
         await saveCampaign(campaign);
-        await broadcastStatus('processing', 'สร้าง draft ครบ เริ่ม Quote');
+        await broadcastStatus('processing', 'All drafts created, starting Quote');
         await runCampaignQuotePhase(campaign);
         return;
     }
@@ -1972,15 +1972,15 @@ async function runCampaignGeneratePhase(campaign) {
             campaign.status = 'completed';
             campaign.phase = 'completed';
             campaign.completedAt = new Date().toISOString();
-            campaign.lastError = queueState.error > 0 ? 'Queue ของ campaign จบลงก่อนจะสร้าง draft ได้ครบ' : '';
+            campaign.lastError = queueState.error > 0 ? 'Campaign queue ended before all drafts were generated' : '';
             await saveCampaign(campaign);
-            await broadcastStatus('done', 'Campaign เสร็จ - ไม่มี draft ที่สร้างได้');
+            await broadcastStatus('done', 'Campaign completed - no drafts could be generated');
             return;
         }
 
         campaign.phase = 'quoting';
         await saveCampaign(campaign);
-        await broadcastStatus('processing', 'สร้าง Draft จาก Queue ครบแล้ว เริ่ม Auto Quote');
+        await broadcastStatus('processing', 'Draft generation from Queue complete, starting Auto Quote');
         await runCampaignQuotePhase(campaign);
         return;
     }
@@ -2039,7 +2039,7 @@ async function activateTopicScout(campaign, topicIndex) {
         }).catch(() => null);
     }
 
-    await broadcastStatus('processing', `Campaign: หาโพสต์สำหรับ "${topic.topic}" (${topic.foundCount || 0}/${topic.targetPostCount})`);
+    await broadcastStatus('processing', `Campaign: finding posts for "${topic.topic}" (${topic.foundCount || 0}/${topic.targetPostCount})`);
     await scheduleChromeAlarm(CAMPAIGN_ALARM, 30000);
 }
 
@@ -2105,13 +2105,13 @@ async function handleCampaignScoutNoResults(payload) {
     campaign.topics[topicIdx] = {
         ...topic,
         status: 'error',
-        errorMessage: 'ไม่พบผลลัพธ์ใน X สำหรับหัวข้อนี้',
+        errorMessage: 'No results found on X for this topic',
         lastProcessedAt: new Date().toISOString()
     };
-    campaign.lastError = `ไม่พบผลลัพธ์สำหรับ ${topic.topic}`;
+    campaign.lastError = `No results found for ${topic.topic}`;
     await saveCampaign(campaign);
     await stopAutoScoutForCampaign();
-    await broadcastStatus('processing', `ไม่พบผลลัพธ์สำหรับ "${topic.topic}" ข้ามไปหัวข้อถัดไป`);
+    await broadcastStatus('processing', `No results found for "${topic.topic}", skipping to next topic`);
     await runCampaignTick();
     return { success: true };
 }
@@ -2207,7 +2207,7 @@ async function runCampaignQuotePhase(campaign) {
     if (!campaignDrafts.length) {
         campaign.status = 'completed'; campaign.phase = 'completed'; campaign.completedAt = new Date().toISOString();
         await saveCampaign(campaign);
-        await broadcastStatus('done', 'Campaign เสร็จสิ้น');
+        await broadcastStatus('done', 'Campaign completed');
         return;
     }
     const orderedDrafts = campaign.quoteDistributionMode === 'alternate-products'
@@ -2222,7 +2222,7 @@ async function runCampaignQuotePhase(campaign) {
         phase: 'starting',
         campaignId: campaign.id,
         pendingCount: orderedDrafts.length,
-        message: 'Campaign Quote เริ่มต้น'
+        message: 'Campaign Quote starting'
     });
     await runAutoQuoteCycle('campaign');
 }
