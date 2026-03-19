@@ -15,6 +15,7 @@
     let isProcessingPrompt = false;
     let lastCompletedRequestId = null;
     const aiProvider = getAiProviderMeta();
+    const XVRAI_DETECT_DEBUG = false; // Phase 4: set true for response-detection tracing
 
     // --- Selectors แบบยืดหยุ่น (อัปเดตได้เมื่อ DOM เปลี่ยน) ---
     const INPUT_SELECTORS = [
@@ -424,6 +425,7 @@
     async function waitForAIResponse(promptText = '', baselineCandidates = new Set(), timeout = 120000) {
         const startTime = Date.now();
         let lastText = '';
+        let lastNormalizedText = '';
         let lastUsableText = '';
         let stableCount = 0;
         let suspiciousRetryUsed = false;
@@ -435,16 +437,20 @@
         while (Date.now() - startTime < timeout) {
             const currentText = getLastAIMessage(promptText, baselineCandidates);
             const usableText = sanitizeAIResponseText(currentText);
+            const normalizedText = sanitizeComparableText(usableText);
 
-            if (currentText && currentText !== lastText) {
-                // ข้อความกำลังเปลี่ยน = AI ยังพิมพ์อยู่
+            if (currentText && normalizedText && normalizedText !== lastNormalizedText) {
+                // Meaningful content changed → AI still generating
                 lastText = currentText;
+                lastNormalizedText = normalizedText;
                 stableCount = 0;
                 if (usableText) {
                     lastUsableText = usableText;
                 }
-            } else if (currentText && currentText === lastText) {
-                // ข้อความเหมือนเดิม
+                debugDetection('text-changed', { stableCount, len: normalizedText.length });
+            } else if (currentText) {
+                // Normalized text stable (raw may differ from DOM churn)
+                lastText = currentText;
                 stableCount++;
 
                 if (usableText) {
@@ -510,27 +516,66 @@
 
     function collectResponseCandidates() {
         const texts = [];
+        const seen = new Set();
 
+        const pushUnique = (text) => {
+            if (text && !seen.has(text)) {
+                seen.add(text);
+                texts.push(text);
+            }
+        };
+
+        // Provider-specific: targeted selectors first (most specific → broader)
         if (aiProvider.key === 'gemini') {
-            document.querySelectorAll('message-content, model-response, .response-content, .markdown, .model-response-text').forEach((element) => {
-                const text = element.innerText?.trim();
-                if (text) texts.push(text);
+            // Primary: .markdown inside response containers = cleanest answer text
+            document.querySelectorAll('model-response .markdown, message-content .markdown').forEach(el => {
+                pushUnique(el.innerText?.trim());
+            });
+            // Broader Gemini containers as fallback
+            document.querySelectorAll('model-response, message-content, .response-content, .model-response-text').forEach(el => {
+                const text = el.innerText?.trim();
+                if (text && !isAccessoryContent(text)) pushUnique(text);
             });
         }
 
+        // Generic response selectors
         for (const selector of RESPONSE_SELECTORS) {
-            document.querySelectorAll(selector).forEach((element) => {
-                const text = element.innerText?.trim();
-                if (text) texts.push(text);
+            document.querySelectorAll(selector).forEach(el => {
+                pushUnique(el.innerText?.trim());
             });
         }
 
-        document.querySelectorAll('[class*="message"], [class*="Message"], .prose, [class*="markdown"], [class*="Markdown"]').forEach((element) => {
-            const text = element.innerText?.trim();
-            if (text) texts.push(text);
+        // Broad fallback (deprioritized)
+        document.querySelectorAll('[class*="message"], [class*="Message"], .prose, [class*="markdown"], [class*="Markdown"]').forEach(el => {
+            pushUnique(el.innerText?.trim());
         });
 
-        return Array.from(new Set(texts));
+        return deduplicateCandidates(texts);
+    }
+
+    // Phase 1: Remove candidates whose text is fully contained within a longer candidate
+    function deduplicateCandidates(candidates) {
+        if (candidates.length <= 1) return candidates;
+        const sorted = [...candidates].sort((a, b) => b.length - a.length);
+        const result = [];
+
+        for (const candidate of sorted) {
+            const isSubset = result.some(kept => kept.includes(candidate));
+            if (!isSubset) {
+                result.push(candidate);
+            }
+        }
+
+        return result;
+    }
+
+    // Phase 1: Filter out Gemini accessory content (sources, footer, suggestions)
+    function isAccessoryContent(text) {
+        if (!text) return false;
+        const trimmed = text.trim();
+        if (trimmed.length < 5) return true;
+        if (/^(show more|view all|sources?|search results?|related|suggestions?|feedback|share draft|share & export|more drafts?|draft \d)$/i.test(trimmed)) return true;
+        return false;
     }
 
     function isPromptEcho(candidateText, promptText) {
@@ -591,8 +636,13 @@
         if (!cleaned) return true;
 
         if (isMostlyUrl(cleaned)) return true;
-        if (cleaned.length < 18) return true;
         if (isToolStatusLine(cleaned)) return true;
+
+        // Short text: suspicious only if it lacks sentence structure or Thai content
+        if (cleaned.length < 18) {
+            const hasSentenceStructure = /[.!?。]/.test(cleaned) || /[ก-๙]/.test(cleaned);
+            return !hasSentenceStructure;
+        }
 
         return false;
     }
@@ -604,11 +654,17 @@
         let score = 0;
         score += Math.min(clean.length, 400);
 
+        // Content quality signals
         if (/[ก-๙]/.test(clean)) score += 120;
         if (/\n/.test(clean)) score += 30;
-        if (/^[-•]/m.test(clean)) score += 25;
+        if (/^[-•]\s/m.test(clean)) score += 25;
+        if (/[.!?。]\s*$/m.test(clean)) score += 35;
+        if (/^\d+[.)]\s/m.test(clean)) score += 30;
         if (aiProvider.key === 'gemini' && /\n/.test(clean)) score += 40;
+
+        // Noise penalties
         if (isMostlyUrl(clean)) score -= 300;
+        if (isAccessoryContent(clean)) score -= 400;
         if (/executed code|searching|thinking|analyzing|read more|sources?|search results?|used tools?|reasoned for|google ai studio|gemini can make mistakes|draft saved/i.test(text)) score -= 500;
 
         return score;
@@ -624,6 +680,12 @@
 
         const withoutUrls = trimmed.replace(/https?:\/\/\S+|www\.\S+/gi, '').trim();
         return withoutUrls.length < 12;
+    }
+
+    // Phase 4: Opt-in detection-level debug (low-noise, semantic events only)
+    function debugDetection(event, data) {
+        if (!XVRAI_DETECT_DEBUG) return;
+        console.log(`[XVR-AI:detect] ${event}`, data || '');
     }
 
     function debugAIResponse(label, rawText, cleanedText) {
