@@ -146,6 +146,7 @@
 
     const btnAutoQuote = $('#btnAutoQuote');
     const autoQuoteStatus = $('#autoQuoteStatus');
+    const autoQuoteSummary = $('#autoQuoteSummary');
     let isAutoQuote = false;
     let autoQuoteState = null;
 
@@ -164,7 +165,7 @@
     }, 1000);
 
     function updateAutoQuoteUi() {
-        if (!btnAutoQuote || !autoQuoteStatus) return;
+        if (!btnAutoQuote || !autoQuoteStatus || !autoQuoteSummary) return;
 
         if (isAutoQuote) {
             btnAutoQuote.textContent = '⏹️ หยุด Auto Quote';
@@ -176,13 +177,35 @@
         btnAutoQuote.textContent = '🚀 เริ่ม Auto Quote';
         btnAutoQuote.style.background = '#10b981';
         autoQuoteStatus.classList.add('hidden');
+        if (!autoQuoteState?.postedCount && !autoQuoteState?.failedCount && !autoQuoteState?.lastFailedReason) {
+            autoQuoteSummary.classList.add('hidden');
+        }
     }
 
     function renderAutoQuoteState() {
-        if (!autoQuoteStatus) return;
+        if (!autoQuoteStatus || !autoQuoteSummary) return;
 
         const state = autoQuoteState || {};
         const providerLabel = aiProvider === 'gemini' ? 'Gemini' : 'Grok';
+        const postedCount = Number(state.postedCount || 0);
+        const failedCount = Number(state.failedCount || 0);
+        const skippedCount = Number(state.skippedCount || 0);
+        const summaryParts = [
+            `สำเร็จ ${postedCount}`,
+            `ไม่สำเร็จ ${failedCount}`,
+            `ข้าม ${skippedCount}`
+        ];
+        if (state.lastFailedDraftId || state.lastFailedReason) {
+            const reasonText = state.lastFailedReason || 'ไม่ทราบสาเหตุ';
+            summaryParts.push(`ล่าสุด ${state.lastFailedDraftId || '-'}: ${reasonText}`);
+        }
+        autoQuoteSummary.textContent = summaryParts.join(' • ');
+        if (state.active || postedCount || failedCount || state.lastFailedReason) {
+            autoQuoteSummary.classList.remove('hidden');
+        } else {
+            autoQuoteSummary.classList.add('hidden');
+        }
+
         if (!state.active) {
             autoQuoteStatus.textContent = state.message || '⏳ ระบบ Auto Quote ทำงานอยู่ - กำลังลุย Draft ตามคิว';
             return;
@@ -220,7 +243,14 @@
         const target = Number(nextRunAt || 0);
         if (!target || target <= Date.now()) return '';
         const totalSeconds = Math.max(0, Math.ceil((target - Date.now()) / 1000));
-        return `${totalSeconds} วินาที`;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+
+        if (minutes <= 0) {
+            return `${seconds} วินาที`;
+        }
+
+        return `${minutes} นาที ${seconds} วินาที`;
     }
 
     if (btnAutoQuote) {
@@ -429,6 +459,7 @@
         ${draft.sourceUrl ? `<div class="card-source">📌 จาก: <a href="${escapeAttr(draft.sourceUrl)}" target="_blank">${escapeHtml(draft.sourceAuthor || 'โพสต์ต้นทาง')}</a></div>` : ''}
 
         <div class="card-content draft-text" contenteditable="false">${escapeHtml(draft.finalText || draft.generatedText)}</div>
+                ${draft.postError ? `<div class="card-source" style="color:#fca5a5;">เหตุผล: ${escapeHtml(draft.postError)}</div>` : ''}
 
         <div class="card-actions">
           <button class="btn-action btn-post" data-action="post" data-id="${escapeAttr(draft.id)}" title="ส่งไปโพสต์บน X">
@@ -853,14 +884,28 @@
         }
     });
 
+    function isAutoQuoteStatusMessage(message) {
+        const text = String(message || '').trim();
+        if (!text) return false;
+
+        return text.includes('Auto Quote')
+            || /^โพสต์แล้ว \d+ รายการ เหลือ \d+ รายการ/.test(text)
+            || /^ข้าม draft /.test(text);
+    }
+
     function updateStatusUI(data) {
         const { status, message } = data;
+        const isAutoQuoteMessage = isAutoQuoteStatusMessage(message);
 
         statusText.textContent = message;
 
         switch (status) {
             case 'processing':
-                statusBar.classList.remove('hidden');
+                if (isAutoQuoteMessage) {
+                    statusBar.classList.add('hidden');
+                } else {
+                    statusBar.classList.remove('hidden');
+                }
                 break;
 
             case 'found':
@@ -880,7 +925,11 @@
                 break;
 
             case 'error':
-                statusBar.classList.remove('hidden');
+                if (isAutoQuoteMessage) {
+                    statusBar.classList.add('hidden');
+                } else {
+                    statusBar.classList.remove('hidden');
+                }
                 if (String(message || '').includes('Auto Quote')) {
                     isAutoQuote = false;
                     updateAutoQuoteUi();

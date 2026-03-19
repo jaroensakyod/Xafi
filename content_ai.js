@@ -168,7 +168,7 @@
         const copied = await tryCopyToClipboard(response);
         chrome.runtime.sendMessage({
             type: 'AI_RESPONSE_READY',
-            data: { response, copied }
+            data: { response, copied, requestId: activeRequestId, aiProvider: aiProvider.key }
         });
 
         lastCompletedRequestId = activeRequestId;
@@ -572,6 +572,7 @@
             .filter(line => line && !isToolStatusLine(line))
             .join('\n')
             .replace(/\n{3,}/g, '\n\n')
+            .replace(/^(gemini|grok)\s+said\s*/i, '')
             .trim();
 
         if (!cleaned || isMostlyUrl(cleaned) || isToolStatusLine(cleaned)) {
@@ -614,7 +615,7 @@
     }
 
     function isToolStatusLine(line) {
-        return /^(executed code|searching|thinking|analyzing|reasoned for.*|read more|view all|sources?.*|search results?.*|used tools?.*)$/i.test(String(line || '').trim());
+        return /^(executed code|searching|thinking|analyzing|reasoned for.*|read more|view all|sources?.*|search results?.*|used tools?.*|(gemini|grok)\s+said|assistant)$/i.test(String(line || '').trim());
     }
 
     function isMostlyUrl(text) {

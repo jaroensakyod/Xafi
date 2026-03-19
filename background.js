@@ -168,8 +168,13 @@ function createInitialAutoQuoteState() {
         pendingCount: 0,
         currentDraftId: '',
         nextRunAt: 0,
+        postedCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
         lastPostedDraftId: '',
         lastPostedAt: '',
+        lastFailedDraftId: '',
+        lastFailedReason: '',
         lastError: '',
         message: '',
         lastUpdated: Date.now()
@@ -804,7 +809,9 @@ async function startAIQueue() {
 async function startAIProcessing(data) {
     const settings = await ensureSettings();
     const aiProvider = getAiProviderConfig(settings.aiProvider);
-    const prompt = buildPrompt(data, settings, contextProduct);
+    const itemProduct = String(data?.productName || data?.product || '').trim();
+    const itemProductLink = String(data?.productLink || '').trim();
+    const prompt = buildPrompt({ ...data, productLink: itemProductLink }, settings, itemProduct);
 
     pendingPrompt = {
         requestId: generateId(),
@@ -813,8 +820,8 @@ async function startAIProcessing(data) {
         sourcePost: {
             ...data,
             cleanText: sanitizeSourceText(data.text),
-            product: contextProduct,
-            productLink
+            product: itemProduct,
+            productLink: itemProductLink
         },
         aiProvider: aiProvider.key
     };
@@ -1005,8 +1012,16 @@ async function forceStopAiProcessing() {
 
 // เมื่อ AI ตอบเสร็จ
 async function onAIResponseReady(data) {
+    if (!pendingPrompt) {
+        return { success: false, ignored: true, error: 'No pending prompt' };
+    }
+
+    if (data?.requestId && pendingPrompt.requestId && data.requestId !== pendingPrompt.requestId) {
+        return { success: false, ignored: true, error: 'Stale AI response' };
+    }
+
     const { drafts = [], results = [] } = await chrome.storage.local.get(['drafts', 'results']);
-    const rawResponse = String(data?.response || '');
+    const rawResponse = stripAiWrapperText(String(data?.response || ''));
     const finalText = buildFinalPostText(
         rawResponse,
         pendingPrompt?.sourcePost?.productLink || ''
@@ -1275,27 +1290,26 @@ async function postToX(data) {
 
     // หา tab ของ x.com ที่เปิดอยู่
     const tabs = await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] });
+    const sourcePath = sourceUrl ? new URL(sourceUrl).pathname : '';
 
     let targetTabId;
     if (tabs.length > 0) {
-        targetTabId = tabs[0].id;
+        const currentWindow = await chrome.windows.getCurrent();
+        const matchingTab = sourcePath
+            ? tabs.find(tab => String(tab.url || '').includes(sourcePath))
+            : null;
+        const preferredTab = matchingTab
+            || tabs.find(tab => tab.active && tab.windowId === currentWindow.id)
+            || tabs[0];
+        targetTabId = preferredTab.id;
 
         // ถ้านี่คือโพสต์ Quote ให้เช็คว่าอยู่หน้าโพสต์ต้นทางหรือยัง
         if (sourceUrl) {
-            const currentTab = tabs[0];
-            const sourcePath = new URL(sourceUrl).pathname;
+            const currentTab = preferredTab;
 
-            if (!currentTab.url.includes(sourcePath)) {
+            if (!String(currentTab.url || '').includes(sourcePath)) {
                 await chrome.tabs.update(targetTabId, { url: sourceUrl, active: true });
-                // รอให้หน้าโหลด
-                await new Promise(resolve => {
-                    chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-                        if (tabId === targetTabId && info.status === 'complete') {
-                            chrome.tabs.onUpdated.removeListener(listener);
-                            resolve();
-                        }
-                    });
-                });
+                await waitForTabComplete(targetTabId, 20000);
             } else {
                 await chrome.tabs.update(targetTabId, { active: true });
             }
@@ -1306,28 +1320,38 @@ async function postToX(data) {
         const urlToOpen = sourceUrl ? sourceUrl : 'https://x.com/compose/post';
         const tab = await chrome.tabs.create({ url: urlToOpen });
         targetTabId = tab.id;
-        // รอให้หน้าโหลด
-        await new Promise(resolve => {
-            chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-                if (tabId === targetTabId && info.status === 'complete') {
-                    chrome.tabs.onUpdated.removeListener(listener);
-                    resolve();
-                }
-            });
-        });
+        await waitForTabComplete(targetTabId, 20000);
     }
 
     // ส่งข้อความไปให้ content_x.js พิมพ์ในช่อง Compose แล้วกดโพสต์ทันที
     await sleep(4500);
 
     try {
-        const response = await sendMessageToTab(targetTabId, {
-            type: 'TYPE_ON_X',
-            data: { text: postText, draftId: data.id, sourceUrl, autoSubmit: true }
-        });
+        let response = null;
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+            try {
+                response = await sendMessageToTab(targetTabId, {
+                    type: 'TYPE_ON_X',
+                    data: { text: postText, draftId: data.id, sourceUrl, autoSubmit: true }
+                });
+
+                if (response?.success) {
+                    break;
+                }
+
+                lastError = new Error(response?.error || 'ส่งโพสต์ไปที่ X ไม่สำเร็จ');
+            } catch (error) {
+                lastError = error;
+            }
+
+            await waitForTabComplete(targetTabId, 10000);
+            await sleep(2500);
+        }
 
         if (!response?.success) {
-            throw new Error(response?.error || 'ส่งโพสต์ไปที่ X ไม่สำเร็จ');
+            throw lastError || new Error('ส่งโพสต์ไปที่ X ไม่สำเร็จ');
         }
 
         await updateDraft({
@@ -1405,6 +1429,18 @@ async function scheduleNextAutoQuoteRun(delayMs, patch = {}) {
     return nextRunAt;
 }
 
+function formatAutoQuoteDelay(delayMs) {
+    const totalSeconds = Math.max(0, Math.ceil(Number(delayMs || 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+
+    if (minutes <= 0) {
+        return `${seconds} วินาที`;
+    }
+
+    return `${minutes} นาที ${seconds} วินาที`;
+}
+
 function triggerDeferredAutoQuoteStart(delayMs = 500) {
     if (!autoQuoteStartRequested || autoQuoteCycleInFlight) return;
     scheduleAutoQuoteRetry(delayMs).catch(console.error);
@@ -1443,9 +1479,12 @@ async function runAutoQuoteCycle(trigger = 'manual') {
     }
 
     autoQuoteCycleInFlight = true;
+    let cycleState = null;
+    let workingDraft = null;
 
     try {
         const currentState = await getAutoQuoteState();
+        cycleState = currentState;
         const settings = await ensureSettings();
         const aiProvider = getAiProviderConfig(settings.aiProvider);
         const campaignId = String(currentState.campaignId || '').trim();
@@ -1489,6 +1528,8 @@ async function runAutoQuoteCycle(trigger = 'manual') {
             return { success: true, done: true };
         }
 
+        workingDraft = readyDraft;
+
         await updateDraft({ id: readyDraft.id, status: 'auto_quote_posting', postError: '' });
         await updateAutoQuoteState({
             active: true,
@@ -1506,13 +1547,15 @@ async function runAutoQuoteCycle(trigger = 'manual') {
         const defaultMax = parseInt(settings?.autoQuoteMaxMinutes || 5, 10);
         const remainingCount = await countPendingAutoQuoteDrafts();
         const postedAt = new Date().toISOString();
+        const postedCount = Number(currentState.postedCount || 0) + 1;
 
         if (remainingCount === 0) {
             await finishAutoQuote({
+                postedCount,
                 lastPostedDraftId: readyDraft.id,
                 lastPostedAt: postedAt,
                 lastError: '',
-                message: 'Auto Quote โพสต์ครบทุก draft แล้ว'
+                message: `Auto Quote โพสต์ครบแล้ว • สำเร็จ ${postedCount} • ไม่สำเร็จ ${Number(currentState.failedCount || 0)}`
             }, 'done', 'Auto Quote โพสต์ครบทุก draft แล้ว');
             return { success: true, done: true };
         }
@@ -1521,17 +1564,56 @@ async function runAutoQuoteCycle(trigger = 'manual') {
         const nextRunAt = await scheduleNextAutoQuoteRun(delayMs, {
             pendingCount: remainingCount,
             currentDraftId: '',
+            postedCount,
             lastPostedDraftId: readyDraft.id,
             lastPostedAt: postedAt,
             lastError: '',
-            message: `โพสต์แล้ว 1 รายการ เหลือ ${remainingCount} รายการ`
+            message: `โพสต์สำเร็จ ${postedCount} รายการ เหลือ ${remainingCount} รายการ`
         });
 
         autoQuoteCycleInFlight = false;
-        await broadcastStatus('processing', `โพสต์แล้ว 1 รายการ เหลือ ${remainingCount} รายการ รอ ${Math.round((nextRunAt - Date.now()) / 60000)} นาที`);
+        await broadcastStatus('processing', `โพสต์แล้ว 1 รายการ เหลือ ${remainingCount} รายการ รอ ${formatAutoQuoteDelay(nextRunAt - Date.now())}`);
         return { success: true, scheduled: true, nextRunAt };
     } catch (err) {
         console.error('[XVR] Auto Quote Cycle Error:', err);
+
+        if (workingDraft?.id) {
+            const reason = err.message || 'ส่งโพสต์ไม่สำเร็จ';
+            const failedCount = Number(cycleState?.failedCount || 0) + 1;
+            const skippedCount = Number(cycleState?.skippedCount || 0) + 1;
+            const postedCount = Number(cycleState?.postedCount || 0);
+            const remainingCount = await countPendingAutoQuoteDrafts();
+
+            if (remainingCount === 0) {
+                await finishAutoQuote({
+                    postedCount,
+                    failedCount,
+                    skippedCount,
+                    lastFailedDraftId: workingDraft.id,
+                    lastFailedReason: reason,
+                    lastError: '',
+                    message: `Auto Quote จบแล้ว • สำเร็จ ${postedCount} • ไม่สำเร็จ ${failedCount}`
+                }, 'done', `ข้าม draft ${workingDraft.id} เพราะ ${reason}`);
+                return { success: true, done: true, skippedFailedDraft: true };
+            }
+
+            const nextRunAt = await scheduleNextAutoQuoteRun(5000, {
+                pendingCount: remainingCount,
+                currentDraftId: '',
+                postedCount,
+                failedCount,
+                skippedCount,
+                lastFailedDraftId: workingDraft.id,
+                lastFailedReason: reason,
+                lastError: '',
+                message: `ข้าม draft ${workingDraft.id} เพราะ ${reason} • เหลือ ${remainingCount} รายการ`
+            });
+
+            autoQuoteCycleInFlight = false;
+            await broadcastStatus('processing', `ข้าม draft ${workingDraft.id} เพราะ ${reason} • เหลือ ${remainingCount} รายการ`);
+            return { success: true, scheduled: true, nextRunAt, skippedFailedDraft: true };
+        }
+
         const nextRunAt = await scheduleChromeAlarm(AUTO_QUOTE_RETRY_ALARM, 30000);
         await updateAutoQuoteState({
             active: true,
@@ -1586,7 +1668,12 @@ async function startAutoQuoteLoop() {
         pendingCount: await countPendingAutoQuoteDrafts(),
         currentDraftId: '',
         nextRunAt: 0,
+        postedCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
         lastError: '',
+        lastFailedDraftId: '',
+        lastFailedReason: '',
         message: 'กำลังเตรียม Auto Quote'
     });
 
@@ -2479,7 +2566,7 @@ function sanitizeSourceText(text) {
 function buildPrompt(sourcePost, settings, product) {
     const promptMode = normalizePromptMode(settings?.promptMode);
     const cleanContent = sanitizeSourceText(sourcePost?.text || '');
-    const productUrl = productLink || sourcePost?.productLink || '';
+    const productUrl = String(sourcePost?.productLink || productLink || '').trim();
     const charBudget = getBodyCharacterBudget(productUrl);
     const sourceContentContext = '- ใช้เนื้อหาจากทั้งโพสต์ได้ รวมถึงข้อความหลัง hashtag แต่ไม่ต้องคัดลอก hashtag หรือลิงก์จากต้นทางมาใช้ตรงๆ';
     const outputOnlyContext = '- ตอบกลับเฉพาะข้อความโพสต์สุดท้ายเพียงอย่างเดียว ห้ามมีคำอธิบาย ห้ามมี markdown ห้ามมี code block และห้ามมีข้อความสถานะ เช่น Executed code';
@@ -2518,7 +2605,7 @@ function buildFinalPostText(text, productUrl) {
     const cleanProductUrl = String(productUrl || '').trim();
     const trailingParts = [cleanProductUrl].filter(Boolean);
     const bodyBudget = getBodyCharacterBudget(cleanProductUrl);
-    const normalizedBody = enforceFourLinePostStructure(normalizeDraftStructure(text));
+    const normalizedBody = enforceFourLinePostStructure(normalizeDraftStructure(stripAiWrapperText(text)));
     let finalBody = trimToCharLimit(normalizedBody, bodyBudget);
     let finalText = joinPostSegments(finalBody, trailingParts);
 
@@ -2567,7 +2654,7 @@ function normalizeWhitespace(text) {
 }
 
 function normalizeDraftStructure(text) {
-    const normalized = normalizeWhitespace(text);
+    const normalized = normalizeWhitespace(stripAiWrapperText(text));
     if (!normalized) return '';
 
     const lines = normalized
@@ -2694,6 +2781,20 @@ function stripBulletPrefix(line) {
 function isUrlOnly(line) {
     const value = String(line || '').trim();
     return value ? /^(https?:\/\/\S+|www\.\S+)$/i.test(value) : false;
+}
+
+function stripAiWrapperText(text) {
+    return String(text || '')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line)
+        .filter(line => !/^(gemini|grok)\s+said$/i.test(line))
+        .filter(line => !/^assistant$/i.test(line))
+        .join('\n')
+        .replace(/^(gemini|grok)\s+said\s*/i, '')
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
 }
 
 function joinPostSegments(body, trailingParts) {
