@@ -27,6 +27,8 @@
     const openAffiliateProductOfferBtn = $('#openAffiliateProductOffer');
     const btnScoutStep = $('#btnScoutStep');
     const btnScoutResume = $('#btnScoutResume');
+    const forceStopAiBtn = $('#forceStopAiBtn');
+    const forceStopAiFromStatusBtn = $('#forceStopAiFromStatus');
     const openResultsPageLink = $('#openResultsPage');
     const openLatestResultBtn = $('#openLatestResult');
     const refreshTrendsBtn = $('#refreshTrends');
@@ -251,6 +253,26 @@
     btnScoutResume?.addEventListener('click', async () => {
         await sendMessage({ type: 'AUTO_SCOUT_RESUME', data: { source: FULL_AUTO_SOURCE } });
     });
+
+    async function handleForceStopAi() {
+        const confirmed = confirm('ต้องการบังคับหยุดงาน AI ที่ค้างอยู่ตอนนี้ใช่ไหม');
+        if (!confirmed) return;
+
+        const res = await sendMessage({ type: 'FORCE_STOP_AI' });
+        if (!res?.success) {
+            alert(res?.error || 'บังคับหยุด AI ไม่สำเร็จ');
+            return;
+        }
+
+        statusText.textContent = 'บังคับหยุด AI แล้ว';
+        statusBar.classList.add('hidden');
+        loadProcessQueue();
+        loadDrafts();
+        loadCampaign();
+    }
+
+    forceStopAiBtn?.addEventListener('click', handleForceStopAi);
+    forceStopAiFromStatusBtn?.addEventListener('click', handleForceStopAi);
 
     openResultsPageLink?.addEventListener('click', (event) => {
         event.preventDefault();
@@ -535,6 +557,7 @@
           <div>
                         <input type="checkbox" class="viral-checkbox" data-post-id="${escapeAttr(post.id)}" ${selectedViralIds.has(post.id) ? 'checked' : ''} style="cursor:pointer;" />
             <span class="card-badge badge-viral">🔥 ${escapeHtml(post.viewCountText)} views</span>
+                        ${post.topic ? `<span class="card-badge">${escapeHtml(post.topic)}</span>` : ''}
           </div>
           <span class="card-time">${formatTime(post.capturedAt)}</span>
         </div>
@@ -1282,7 +1305,7 @@
         const totalTarget = campaign.topics.reduce((s, t) => s + t.targetPostCount, 0);
         const totalGenerated = campaign.topics.reduce((s, t) => s + (t.generatedCount || 0), 0);
         const totalQuoted = campaign.topics.reduce((s, t) => s + (t.quotedCount || 0), 0);
-        const phaseLabels = { setup: '\u0e15\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32', generating: '\u0e2a\u0e23\u0e49\u0e32\u0e07 Draft', quoting: 'Quote \u0e2d\u0e31\u0e15\u0e42\u0e19\u0e21\u0e31\u0e15\u0e34', completed: '\u0e40\u0e2a\u0e23\u0e47\u0e08\u0e2a\u0e34\u0e49\u0e19' };
+        const phaseLabels = { setup: '\u0e15\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32', collecting: '\u0e40\u0e01\u0e47\u0e1a\u0e42\u0e1e\u0e2a\u0e15\u0e4c\u0e40\u0e02\u0e49\u0e32 Found/Queue', generating: '\u0e2a\u0e23\u0e49\u0e32\u0e07 Draft \u0e08\u0e32\u0e01 Queue', quoting: 'Quote \u0e2d\u0e31\u0e15\u0e42\u0e19\u0e21\u0e31\u0e15\u0e34', completed: '\u0e40\u0e2a\u0e23\u0e47\u0e08\u0e2a\u0e34\u0e49\u0e19' };
 
         monitorContent.innerHTML = `
             <div class="monitor-grid">

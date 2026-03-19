@@ -359,6 +359,9 @@ async function handleMessage(message, sender) {
             processingSourceTabId = sender.tab?.id || null;
             return await queueAIProcess(message.data);
 
+        case 'FORCE_STOP_AI':
+            return await forceStopAiProcessing();
+
         case 'OPEN_SIDE_PANEL':
             if (sender.tab) {
                 await chrome.sidePanel.open({ windowId: sender.tab.windowId });
@@ -966,6 +969,35 @@ async function onAIPageReady(tabId = null) {
 
     if (aiTabId) {
         await dispatchPromptToAi(settings, 12, 800);
+    }
+
+    return { success: true };
+}
+
+async function forceStopAiProcessing() {
+    const currentPrompt = pendingPrompt;
+
+    if (currentPrompt?.queueItemId) {
+        await updateProcessQueueItem(currentPrompt.queueItemId, {
+            queueStatus: 'error',
+            queueError: 'ผู้ใช้บังคับหยุด AI',
+            completedAt: new Date().toISOString()
+        });
+    }
+
+    pendingPrompt = null;
+    aiProcessQueue = [];
+    isProcessingAIQueue = false;
+    processingSourceTabId = null;
+
+    await closeAiWindowIfIdle(true);
+    await broadcastStatus('done', 'บังคับหยุด AI แล้ว');
+
+    const campaign = await getCampaign();
+    if (campaign?.status === 'running' && campaign.phase === 'generating') {
+        campaign.status = 'paused';
+        campaign.lastError = 'ผู้ใช้บังคับหยุด AI';
+        await saveCampaign(campaign);
     }
 
     return { success: true };

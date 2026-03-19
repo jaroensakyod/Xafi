@@ -8,6 +8,7 @@ snapshot ปัจจุบันรองรับ:
 - AI generation ผ่าน Grok หรือ Gemini
 - Full Auto campaign orchestration หลายหัวข้อ
 - queue, drafts, results, และ auto quote
+- manual recovery ด้วยปุ่ม `บังคับหยุด AI`
 - Google Trends helper สูงสุด 20 รายการพร้อม compact labels
 
 สถานะปัจจุบันไม่ใช่ prototype แล้ว แต่ยังเป็น automation-heavy extension ที่พึ่งพา DOM ของ X และ AI provider สูง จึงเหมาะกับ internal / operator usage มากกว่าการอ้างว่า stable เต็มรูปแบบ
@@ -27,6 +28,7 @@ snapshot ปัจจุบันรองรับ:
 - Auto submit ไปที่ X พร้อม verification หลังคลิกโพสต์
 - Auto Quote scheduler แบบ `chrome.alarms` เพื่อให้คิวต่อรอบหลังยังเดินได้ใน MV3
 - หยุด Auto Scout เมื่อเจอครบจำนวนโพสต์ที่ตั้งไว้ได้
+- ปุ่ม `บังคับหยุด AI` สำหรับเคลียร์ state ค้างของ AI queue / pending prompt
 
 ## โครงสร้างไฟล์
 
@@ -46,6 +48,7 @@ Xafi/
 ├── README.md
 └── doc/
     ├── 2026-03-19-update.md
+    ├── 2026-03-19-full-auto-stability.md
     ├── code_review.md
     ├── implement_plan.md
     └── release_readiness.md
@@ -128,6 +131,7 @@ Xafi/
 - เมื่อหัวข้อใดเจอโพสต์แล้ว ระบบจะสลับหรือทำต่อให้ตรงกับ `round-robin` / `drain-topic`
 - เมื่อไม่พบผลลัพธ์ใน X ต่อเนื่อง ระบบจะ mark หัวข้อนั้นเป็นข้ามและไปหัวข้อถัดไปแทนการ reload วน
 - เมื่อชน `session limit` หรือ `daily limit` ระหว่าง collect phase ระบบจะ pause campaign พร้อมสถานะ แทนการเริ่มหาใหม่ซ้ำ
+- ถ้า AI queue หรือ popup ค้าง ผู้ใช้สามารถกด `บังคับหยุด AI` เพื่อเคลียร์ state และค่อยเริ่มใหม่ได้
 
 ## การติดตั้ง
 
@@ -161,6 +165,7 @@ Xafi/
 2. ตั้ง hashtag, product, และ product link
 3. เปิด `Auto Scout`
 4. ถ้าต้องการให้หยุดเมื่อเจอครบจำนวนหนึ่ง ให้เปิด `หยุดเมื่อเจอโพสต์ที่เข้าเงื่อนไข` และกำหนดจำนวนใน Settings
+5. ถ้างาน AI ค้างหรือขึ้นสถานะว่ากำลังทำงานอยู่ตลอด ให้ใช้ปุ่ม `⛔ บังคับหยุด AI`
 
 ### Draft to X
 
@@ -189,6 +194,7 @@ Xafi/
 - ปรับ Full Auto runtime ให้ลำดับ collect เป็น `Found -> Queue` ก่อนเข้า generate/quote
 - บังคับ X search ไปที่ `Top` และเพิ่มการพิมพ์/กดค้นหาจริงใน campaign mode
 - ลดปัญหา reload loop ด้วย scout heartbeat, no-results skip, และ pause-on-limit behavior
+- เพิ่มปุ่ม `บังคับหยุด AI` ใน side panel เพื่อเคลียร์ AI busy state ที่ค้างได้ทันที
 
 ## ข้อจำกัดสำคัญ
 
@@ -202,6 +208,7 @@ Xafi/
 ## เอกสารเพิ่มเติม
 
 - `doc/2026-03-19-update.md` สรุปงานของวันนี้แบบ changelog grounded จากโค้ดที่แก้จริง
+- `doc/2026-03-19-full-auto-stability.md` สรุปปัญหาและวิธีแก้รอบล่าสุดของ Full Auto และ AI recovery
 - `doc/code_review.md` รีวิวแบบ grounded จากโค้ดจริง พร้อมข้อดี ข้อเสีย และความเสี่ยง
 - `doc/release_readiness.md` สรุปความพร้อมก่อนปล่อยและสิ่งที่ควรทำต่อ
 - `doc/implement_plan.md` แผน Full Automate Home ที่ใช้เป็นฐานของรอบ implement นี้
