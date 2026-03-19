@@ -118,7 +118,16 @@ Xafi/
 3. เพิ่มหลายหัวข้อ โดยแต่ละหัวข้อมี hashtag, product, product link, และ target post count ของตัวเอง
 4. เลือก topic execution mode ระหว่าง `round-robin` กับ `drain-topic`
 5. เลือก quote distribution mode ระหว่าง `sequential-by-product` กับ `alternate-products`
-6. กดเริ่ม campaign เพื่อให้ระบบสลับหาโพสต์, ส่ง AI, สร้าง draft, และต่อด้วย quote phase
+6. กดเริ่ม campaign เพื่อให้ระบบทำงานตามลำดับ `Found -> Queue -> Draft -> Quote`
+
+รายละเอียด runtime ปัจจุบัน:
+
+- campaign จะเก็บโพสต์เข้า `Found` และ `Queue` ก่อนเสมอ ไม่ยิง AI ข้าม queue โดยตรง
+- metadata ของหัวข้อ เช่น `campaignId`, `topicId`, `topic`, `productName`, `productLink` จะถูกติดไปกับ Found post ตั้งแต่ตอนเจอโพสต์
+- campaign mode จะเปิดหน้า search ของ X แบบ `Top` ไม่ใช้ `Latest`
+- เมื่อหัวข้อใดเจอโพสต์แล้ว ระบบจะสลับหรือทำต่อให้ตรงกับ `round-robin` / `drain-topic`
+- เมื่อไม่พบผลลัพธ์ใน X ต่อเนื่อง ระบบจะ mark หัวข้อนั้นเป็นข้ามและไปหัวข้อถัดไปแทนการ reload วน
+- เมื่อชน `session limit` หรือ `daily limit` ระหว่าง collect phase ระบบจะ pause campaign พร้อมสถานะ แทนการเริ่มหาใหม่ซ้ำ
 
 ## การติดตั้ง
 
@@ -177,6 +186,9 @@ Xafi/
 - เพิ่ม Google Trends fallback และ compact labels ให้รายการอ่านง่ายขึ้น
 - เพิ่ม stop-after-N-found setting สำหรับ Auto Scout
 - เพิ่ม footer `power by Copyright © 2026 AMTF inc.` ใน side panel
+- ปรับ Full Auto runtime ให้ลำดับ collect เป็น `Found -> Queue` ก่อนเข้า generate/quote
+- บังคับ X search ไปที่ `Top` และเพิ่มการพิมพ์/กดค้นหาจริงใน campaign mode
+- ลดปัญหา reload loop ด้วย scout heartbeat, no-results skip, และ pause-on-limit behavior
 
 ## ข้อจำกัดสำคัญ
 
@@ -185,6 +197,7 @@ Xafi/
 - ไม่มี retry policy แบบเต็มรูปแบบสำหรับ stuck DOM states
 - queue state ของ AI generation ยังใช้ทั้ง in-memory และ storage จึงยังมี edge cases ที่ต้องเฝ้าดู
 - Google Trends ยังเป็น best-effort helper เพราะ source endpoint ฝั่ง Google ไม่เสถียรทุกประเทศ/ทุกเวลา
+- Full Auto ยังควรทดสอบด้วย campaign ขนาดเล็กหลัง X เปลี่ยน UI เพราะ selector ของ search/results page มีความเปราะบางสูง
 
 ## เอกสารเพิ่มเติม
 

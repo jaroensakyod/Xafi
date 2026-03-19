@@ -32,7 +32,10 @@
     let autoScoutQuery = '';
     let autoScoutSearchInProgress = false;
     let autoScoutPaused = false;
+    let autoScoutCampaignMode = false;
     let autoScoutStepCount = 0;
+    let autoScoutNoResultSteps = 0;
+    let autoScoutNoResultReported = false;
     let scoutSettings = {
         scrollPreset: 'medium',
         manualAssist: false,
@@ -76,7 +79,7 @@
                 scoutSettings = { ...scoutSettings, ...message.data };
             }
 
-            if (autoScoutActive && !autoScoutPaused && !scoutSettings.manualAssist) {
+            if (autoScoutActive && !autoScoutPaused && !isManualAssistEnabled()) {
                 beginAutoScoutLoop();
             }
 
@@ -87,6 +90,7 @@
         if (message.type === 'AUTO_SCOUT_TOGGLE') {
             autoScoutActive = Boolean(message.data?.enabled);
             autoScoutQuery = message.data?.query || '';
+            autoScoutCampaignMode = Boolean(message.data?.campaignMode);
             if (autoScoutActive) {
                 startAutoScout().catch(console.error);
             } else {
@@ -123,6 +127,22 @@
         await refreshScoutSettings();
         autoScoutActive = true;
         autoScoutPaused = false;
+        autoScoutNoResultSteps = 0;
+        autoScoutNoResultReported = false;
+
+        const desiredSearchUrl = buildSearchUrl(autoScoutQuery);
+        const currentUrl = new URL(window.location.href);
+        const currentQuery = (currentUrl.searchParams.get('q') || '').trim();
+        const currentFilter = (currentUrl.searchParams.get('f') || '').trim().toLowerCase();
+        const isExactSearchPage = window.location.pathname.startsWith('/search')
+            && currentQuery.toLowerCase() === String(autoScoutQuery || '').trim().toLowerCase()
+            && currentFilter !== 'live';
+
+        if (autoScoutCampaignMode && autoScoutQuery && !isExactSearchPage) {
+            showToast(`🔎 เปิดหน้าค้นหาอัตโนมัติ: ${autoScoutQuery}`, 'info');
+            window.location.href = desiredSearchUrl;
+            return;
+        }
 
         const isSearchPage = window.location.pathname.startsWith('/search');
         const isExplorePage = window.location.href.includes('/explore');
@@ -149,15 +169,15 @@
         sendScoutProgress({
             active: true,
             paused: false,
-            pauseReason: scoutSettings.manualAssist ? 'รอ Step Scroll' : '',
+            pauseReason: isManualAssistEnabled() ? 'รอ Step Scroll' : '',
             steps: autoScoutStepCount,
             scrollPreset: scoutSettings.scrollPreset,
-            manualAssist: Boolean(scoutSettings.manualAssist)
+            manualAssist: isManualAssistEnabled()
         });
 
         showToast(`🤖 เริ่มค้นหาอัตโนมัติ${autoScoutQuery ? `: ${autoScoutQuery}` : ''}`, 'info');
 
-        if (scoutSettings.manualAssist) {
+        if (isManualAssistEnabled()) {
             showToast('⤵ Manual Assist เปิดอยู่ กด Step Scroll เพื่อเลื่อนทีละรอบ', 'info');
             await performScoutStep();
             pauseAutoScout('รอ Step Scroll');
@@ -172,17 +192,20 @@
         autoScoutInterval = null;
         autoScoutPaused = false;
         autoScoutActive = false;
+        autoScoutNoResultSteps = 0;
+        autoScoutNoResultReported = false;
         if (autoScoutBadgeEl) {
             autoScoutBadgeEl.remove();
             autoScoutBadgeEl = null;
         }
+        autoScoutCampaignMode = false;
         sendScoutProgress({ active: false, paused: false, pauseReason: '', steps: autoScoutStepCount });
         showToast('🛑 ปิดโหมด Auto Scout', 'info');
     }
 
     function beginAutoScoutLoop() {
         if (autoScoutInterval) clearInterval(autoScoutInterval);
-        if (!autoScoutActive || autoScoutPaused || scoutSettings.manualAssist) {
+        if (!autoScoutActive || autoScoutPaused || isManualAssistEnabled()) {
             return;
         }
 
@@ -197,7 +220,25 @@
     async function performScoutStep() {
         if (!autoScoutActive || autoScoutPaused) return;
 
-        scanTweets();
+        const scanState = scanTweets();
+
+        if (autoScoutCampaignMode) {
+            if (isNoResultsState(scanState)) {
+                autoScoutNoResultSteps += 1;
+                if (autoScoutNoResultSteps >= 3 && !autoScoutNoResultReported) {
+                    autoScoutNoResultReported = true;
+                    stopAutoScout();
+                    chrome.runtime.sendMessage({
+                        type: 'AUTO_SCOUT_NO_RESULTS',
+                        data: { query: autoScoutQuery, steps: autoScoutStepCount }
+                    }, () => void chrome.runtime.lastError);
+                    return;
+                }
+            } else {
+                autoScoutNoResultSteps = 0;
+                autoScoutNoResultReported = false;
+            }
+        }
 
         const preset = SCROLL_PRESETS[scoutSettings.scrollPreset] || SCROLL_PRESETS.medium;
         performPageScroll(window.innerHeight * preset.distanceFactor);
@@ -209,10 +250,11 @@
             pauseReason: '',
             steps: autoScoutStepCount,
             scrollPreset: scoutSettings.scrollPreset,
-            manualAssist: Boolean(scoutSettings.manualAssist)
+            manualAssist: isManualAssistEnabled()
         });
 
-        if (scoutSettings.checkpointEverySteps > 0 && autoScoutStepCount % scoutSettings.checkpointEverySteps === 0) {
+        const checkpointEverySteps = getCheckpointEverySteps();
+        if (checkpointEverySteps > 0 && autoScoutStepCount % checkpointEverySteps === 0) {
             pauseAutoScout(`ถึง checkpoint ที่ ${autoScoutStepCount}`);
         }
     }
@@ -227,9 +269,21 @@
             pauseReason: reason,
             steps: autoScoutStepCount,
             scrollPreset: scoutSettings.scrollPreset,
-            manualAssist: Boolean(scoutSettings.manualAssist)
+            manualAssist: isManualAssistEnabled()
         });
         showToast(`⏸ ${reason}`, 'info');
+    }
+
+    function isManualAssistEnabled() {
+        return autoScoutCampaignMode ? false : Boolean(scoutSettings.manualAssist);
+    }
+
+    function getCheckpointEverySteps() {
+        return autoScoutCampaignMode ? 0 : Math.max(0, Number(scoutSettings.checkpointEverySteps || 0));
+    }
+
+    function shouldPauseOnFound() {
+        return autoScoutCampaignMode ? false : Boolean(scoutSettings.pauseOnFound);
     }
 
     function performPageScroll(distance) {
@@ -312,10 +366,7 @@
 
         const currentUrl = new URL(window.location.href);
         const currentQuery = (currentUrl.searchParams.get('q') || '').trim();
-        if (window.location.pathname.startsWith('/search') && currentQuery.toLowerCase() === normalizedQuery.toLowerCase()) {
-            return;
-        }
-
+        const currentFilter = (currentUrl.searchParams.get('f') || '').trim().toLowerCase();
         autoScoutSearchInProgress = true;
 
         try {
@@ -329,8 +380,21 @@
                 'input[placeholder*="ค้นหา" i]'
             ], 12000);
 
+            const currentInputValue = String(searchInput?.value || '').trim();
+            const alreadyExactSearch = window.location.pathname.startsWith('/search')
+                && currentQuery.toLowerCase() === normalizedQuery.toLowerCase()
+                && currentFilter !== 'live';
+            if (!autoScoutCampaignMode && alreadyExactSearch && currentInputValue.toLowerCase() === normalizedQuery.toLowerCase()) {
+                return;
+            }
+
             if (!searchInput) {
-                showToast('❌ ไม่พบช่อง Search บนหน้า X', 'error');
+                if (autoScoutQuery) {
+                    showToast('🔁 ไม่พบช่อง Search, เปิดหน้าค้นหาโดยตรงแทน', 'info');
+                    window.location.href = buildSearchUrl(autoScoutQuery);
+                } else {
+                    showToast('❌ ไม่พบช่อง Search บนหน้า X', 'error');
+                }
                 return;
             }
 
@@ -367,6 +431,15 @@
         element.focus();
         await waitForNextFrame();
 
+        pressEnter(element);
+        await sleep(700);
+
+        let currentUrl = new URL(window.location.href);
+        let currentQuery = currentUrl.searchParams.get('q') || '';
+        if (window.location.href !== beforeUrl && currentQuery.toLowerCase().includes(query.toLowerCase())) {
+            return;
+        }
+
         if (element.form && typeof element.form.requestSubmit === 'function') {
             element.form.requestSubmit();
         } else {
@@ -381,14 +454,18 @@
 
         await sleep(1200);
 
-        const currentUrl = new URL(window.location.href);
-        const currentQuery = currentUrl.searchParams.get('q') || '';
+        currentUrl = new URL(window.location.href);
+        currentQuery = currentUrl.searchParams.get('q') || '';
         if (window.location.href !== beforeUrl && currentQuery.toLowerCase().includes(query.toLowerCase())) {
             return;
         }
 
-        const encodedQuery = encodeURIComponent(query);
-        window.location.href = `https://x.com/search?q=${encodedQuery}&src=typed_query&f=live`;
+        window.location.href = buildSearchUrl(query);
+    }
+
+    function buildSearchUrl(query) {
+        const encodedQuery = encodeURIComponent(String(query || '').trim());
+        return `https://x.com/search?q=${encodedQuery}&src=typed_query`;
     }
 
     // =============================================
@@ -419,6 +496,7 @@
     // =============================================
     function scanTweets() {
         const articles = document.querySelectorAll('article[data-testid="tweet"]');
+        let qualifiedCount = 0;
 
         articles.forEach(article => {
             if (article.hasAttribute(PROCESSED_ATTR)) return;
@@ -426,6 +504,7 @@
 
             const viewData = extractViewCount(article);
             if (!viewData || viewData.count < minViews) return;
+            qualifiedCount += 1;
 
             // พบโพสต์ viral!
             highlightTweet(article);
@@ -440,13 +519,29 @@
                 const pauseTarget = Math.max(1, Number(scoutSettings.pauseOnFoundCount || 1));
                 if (response?.limitReached) {
                     pauseAutoScout('ถึง limit ของรอบนี้แล้ว');
-                } else if (response?.success && !response?.duplicate && scoutSettings.pauseOnFound) {
+                } else if (response?.success && !response?.duplicate && shouldPauseOnFound()) {
                     if (Number(response?.foundThisSession || 0) >= pauseTarget) {
                         pauseAutoScout(`เจอโพสต์ที่เข้าเงื่อนไขครบ ${pauseTarget} โพสต์`);
                     }
                 }
             });
         });
+
+        return {
+            articleCount: articles.length,
+            qualifiedCount
+        };
+    }
+
+    function isNoResultsState(scanState) {
+        if (scanState?.qualifiedCount > 0) return false;
+        if (scanState?.articleCount > 0) return false;
+
+        const pageText = (document.body?.innerText || '').toLowerCase();
+        if (pageText.includes('no results for') || pageText.includes('try searching for something else')) return true;
+        if (pageText.includes('ไม่พบผลลัพธ์') || pageText.includes('ลองค้นหาอย่างอื่น')) return true;
+
+        return window.location.pathname.startsWith('/search');
     }
 
     // =============================================

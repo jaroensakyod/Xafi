@@ -155,6 +155,7 @@ function createInitialProgress() {
         pauseReason: '',
         manualAssist: false,
         scrollPreset: 'medium',
+        requestedAt: 0,
         lastUpdated: Date.now()
     };
 }
@@ -163,6 +164,7 @@ function createInitialAutoQuoteState() {
     return {
         active: false,
         phase: 'idle',
+        campaignId: '',
         pendingCount: 0,
         currentDraftId: '',
         nextRunAt: 0,
@@ -341,6 +343,9 @@ async function handleMessage(message, sender) {
 
         case 'AUTO_SCOUT_PROGRESS':
             return await updateAutoScoutProgress(message.data);
+
+        case 'AUTO_SCOUT_NO_RESULTS':
+            return await handleCampaignScoutNoResults(message.data || {});
 
         case 'AUTO_SCOUT_STEP':
             assertFullAutoSource(message.data);
@@ -550,9 +555,18 @@ async function handleMessage(message, sender) {
 async function saveViralPost(post) {
     const limits = await getLimitsState();
     if (limits.sessionLimitReached || limits.dailyLimitReached) {
+        const campaign = await getCampaign();
+        if (campaign?.status === 'running' && campaign.phase === 'collecting') {
+            await pauseCampaignForLimit(limits.dailyLimitReached ? 'ถึง daily limit แล้ว' : 'ถึง session limit แล้ว');
+        }
         await broadcastStatus('done', limits.dailyLimitReached ? 'ถึง daily limit แล้ว' : 'ถึง session limit แล้ว');
         return { success: false, limitReached: true };
     }
+
+    const campaign = await getCampaign();
+    const activeTopic = campaign?.status === 'running' && campaign.phase === 'collecting'
+        ? campaign.topics[campaign.activeTopicIndex]
+        : null;
 
     const { viralPosts = [] } = await chrome.storage.local.get('viralPosts');
 
@@ -561,9 +575,17 @@ async function saveViralPost(post) {
         return { success: true, duplicate: true };
     }
 
-    post.id = generateId();
-    post.capturedAt = new Date().toISOString();
-    viralPosts.unshift(post);
+    const enrichedPost = {
+        ...post,
+        id: generateId(),
+        capturedAt: new Date().toISOString(),
+        campaignId: activeTopic ? campaign.id : (post.campaignId || ''),
+        topicId: activeTopic ? activeTopic.id : (post.topicId || ''),
+        topic: activeTopic ? activeTopic.topic : (post.topic || ''),
+        productName: activeTopic ? activeTopic.productName : (post.productName || ''),
+        productLink: activeTopic ? activeTopic.productLink : (post.productLink || '')
+    };
+    viralPosts.unshift(enrichedPost);
 
     // เก็บสูงสุด 100 โพสต์
     if (viralPosts.length > 100) viralPosts.length = 100;
@@ -572,18 +594,16 @@ async function saveViralPost(post) {
     const counters = await incrementDiscoveryCounters();
     await broadcastStatus('found', `พบโพสต์ Viral ใหม่: ${post.viewCountText}`);
 
-    // Campaign auto-queue
-    const campaignForAutoQueue = await getCampaign();
-    if (campaignForAutoQueue?.status === 'running' && campaignForAutoQueue.phase === 'generating') {
-        const activeTopic = campaignForAutoQueue.topics[campaignForAutoQueue.activeTopicIndex];
-        if (activeTopic && activeTopic.generatedCount < activeTopic.targetPostCount && activeTopic.status !== 'error') {
-            await queueAIProcess({ ...post, campaignId: campaignForAutoQueue.id, topicId: activeTopic.id });
+    if (campaign?.status === 'running' && campaign.phase === 'collecting') {
+        if (activeTopic && (activeTopic.foundCount || 0) < activeTopic.targetPostCount && activeTopic.status !== 'error') {
+            await addToProcessQueue(enrichedPost);
+            await onCampaignPostQueued(campaign.id, activeTopic.id, enrichedPost.url || '');
         }
     }
 
     return {
         success: true,
-        id: post.id,
+        id: enrichedPost.id,
         foundThisSession: counters?.foundThisSession || 0,
         dailyCount: counters?.dailyCount || 0
     };
@@ -695,13 +715,18 @@ async function queueAIProcess(data) {
     return { success: true };
 }
 
-async function startProcessQueueFromStorage() {
+async function startProcessQueueFromStorage(options = {}) {
+    const campaignId = typeof options?.campaignId === 'string' ? options.campaignId.trim() : '';
     if (isProcessingAIQueue || pendingPrompt) {
         return { success: false, error: 'คิวกำลังทำงานอยู่แล้ว' };
     }
 
     const { processQueue = [] } = await chrome.storage.local.get('processQueue');
-    const itemsToRun = processQueue.filter(item => (item.queueStatus || 'queued') !== 'done');
+    const itemsToRun = processQueue.filter(item => {
+        const queueStatus = item.queueStatus || 'queued';
+        if (campaignId && item.campaignId !== campaignId) return false;
+        return !['done', 'processing'].includes(queueStatus);
+    });
 
     if (!itemsToRun.length) {
         return { success: false, error: 'ไม่มีรายการในคิว' };
@@ -716,7 +741,12 @@ async function startProcessQueueFromStorage() {
         queueError: ''
     })));
 
-    await broadcastStatus('processing', `เริ่มสร้างคอนเทนต์ตามคิว ${itemsToRun.length} รายการ`);
+    await broadcastStatus(
+        'processing',
+        campaignId
+            ? `เริ่มสร้างคอนเทนต์ตามคิวของ campaign ${itemsToRun.length} รายการ`
+            : `เริ่มสร้างคอนเทนต์ตามคิว ${itemsToRun.length} รายการ`
+    );
 
     if (!isProcessingAIQueue) {
         await startAIQueue();
@@ -729,6 +759,11 @@ async function startAIQueue() {
     if (aiProcessQueue.length === 0) {
         isProcessingAIQueue = false;
         await broadcastStatus('done', 'สร้างคอนเทนต์ทั้งหมดเสร็จสิ้นแล้ว!');
+
+        const campaign = await getCampaign();
+        if (campaign?.status === 'running' && campaign.phase === 'generating') {
+            await scheduleChromeAlarm(CAMPAIGN_ALARM, 1000);
+        }
 
         await closeAiWindowIfIdle(true);
         triggerDeferredAutoQuoteStart(500);
@@ -1131,7 +1166,11 @@ async function updateDraftStatuses(transform) {
 }
 
 async function syncAutoQuoteDraftStatuses(active) {
+    const state = await getAutoQuoteState();
+    const campaignId = String(state.campaignId || '').trim();
+
     return updateDraftStatuses((draft) => {
+        if (campaignId && draft.campaignId !== campaignId) return draft;
         if (!draft.sourceUrl) return draft;
 
         if (active && draft.status === 'ready') {
@@ -1170,8 +1209,13 @@ async function recoverAutoQuoteDraftStatuses() {
 }
 
 async function countPendingAutoQuoteDrafts() {
+    const state = await getAutoQuoteState();
+    const campaignId = String(state.campaignId || '').trim();
     const { drafts = [] } = await chrome.storage.local.get('drafts');
-    return drafts.filter((draft) => ['ready', 'auto_quote_queued', 'posting', 'auto_quote_posting'].includes(draft.status) && draft.sourceUrl).length;
+    return drafts.filter((draft) => {
+        if (campaignId && draft.campaignId !== campaignId) return false;
+        return ['ready', 'auto_quote_queued', 'posting', 'auto_quote_posting'].includes(draft.status) && draft.sourceUrl;
+    }).length;
 }
 
 async function clearAllDrafts() {
@@ -1261,6 +1305,10 @@ async function postToX(data) {
             postedAt: new Date().toISOString()
         });
 
+        if (draft?.campaignId && draft?.topicId) {
+            await onCampaignDraftPosted(draft);
+        }
+
         return { success: true };
     } catch (error) {
         await updateDraft({
@@ -1337,6 +1385,7 @@ async function finishAutoQuote(statePatch, status, message) {
     await updateAutoQuoteState({
         active: false,
         phase: status === 'error' ? 'idle' : 'done',
+        campaignId: '',
         pendingCount: 0,
         currentDraftId: '',
         nextRunAt: 0,
@@ -1367,6 +1416,7 @@ async function runAutoQuoteCycle(trigger = 'manual') {
         const currentState = await getAutoQuoteState();
         const settings = await ensureSettings();
         const aiProvider = getAiProviderConfig(settings.aiProvider);
+        const campaignId = String(currentState.campaignId || '').trim();
         if (!currentState.active && !autoQuoteStartRequested) {
             autoQuoteCycleInFlight = false;
             return { success: false, error: 'Auto Quote is not active' };
@@ -1394,7 +1444,10 @@ async function runAutoQuoteCycle(trigger = 'manual') {
         }
 
         const { drafts = [] } = await chrome.storage.local.get('drafts');
-        const readyDraft = drafts.find(draft => ['auto_quote_queued', 'ready'].includes(draft.status) && draft.sourceUrl);
+        const readyDraft = drafts.find(draft => {
+            if (campaignId && draft.campaignId !== campaignId) return false;
+            return ['auto_quote_queued', 'ready'].includes(draft.status) && draft.sourceUrl;
+        });
 
         if (!readyDraft) {
             await finishAutoQuote({
@@ -1497,6 +1550,7 @@ async function startAutoQuoteLoop() {
     await updateAutoQuoteState({
         active: true,
         phase: 'starting',
+        campaignId: '',
         pendingCount: await countPendingAutoQuoteDrafts(),
         currentDraftId: '',
         nextRunAt: 0,
@@ -1515,6 +1569,7 @@ async function stopAutoQuoteLoop() {
     await updateAutoQuoteState({
         active: false,
         phase: 'idle',
+        campaignId: '',
         pendingCount: 0,
         currentDraftId: '',
         nextRunAt: 0,
@@ -1543,7 +1598,7 @@ function createCampaignDefaults() {
 function createTopicDefaults() {
     return {
         id: '', topic: '', productName: '', productLink: '',
-        targetPostCount: 3, generatedCount: 0, quotedCount: 0,
+        targetPostCount: 3, foundCount: 0, generatedCount: 0, quotedCount: 0,
         status: 'pending', lastProcessedAt: '', lastSourceUrl: '', errorMessage: ''
     };
 }
@@ -1598,13 +1653,18 @@ async function startCampaign() {
     }
     if (isAiBusy()) return { success: false, error: 'AI กำลังทำงานอยู่ กรุณารอให้เสร็จก่อน' };
     campaign.status = 'running';
-    campaign.phase = 'generating';
+    campaign.phase = 'collecting';
     campaign.startedAt = campaign.startedAt || new Date().toISOString();
     campaign.activeTopicIndex = 0;
     campaign.lastError = '';
     campaign.completedAt = '';
     campaign.topics = campaign.topics.map(t => ({
-        ...t, status: t.generatedCount >= t.targetPostCount ? 'completed' : 'pending', errorMessage: ''
+        ...t,
+        foundCount: Math.max(0, parseInt(t.foundCount, 10) || 0),
+        generatedCount: Math.max(0, parseInt(t.generatedCount, 10) || 0),
+        quotedCount: Math.max(0, parseInt(t.quotedCount, 10) || 0),
+        status: t.generatedCount >= t.targetPostCount ? 'completed' : 'pending',
+        errorMessage: ''
     }));
     await saveCampaign(campaign);
     await broadcastStatus('processing', 'เริ่ม Full Automate Campaign');
@@ -1662,7 +1722,7 @@ async function resetCampaign() {
     campaign.completedAt = '';
     campaign.lastError = '';
     campaign.topics = campaign.topics.map(t => ({
-        ...t, generatedCount: 0, quotedCount: 0, status: 'pending',
+        ...t, foundCount: 0, generatedCount: 0, quotedCount: 0, status: 'pending',
         lastProcessedAt: '', lastSourceUrl: '', errorMessage: ''
     }));
     await saveCampaign(campaign);
@@ -1678,28 +1738,36 @@ async function deleteCampaign() {
 
 async function stopAutoScoutForCampaign() {
     isAutoScoutEnabled = false;
-    await chrome.storage.local.set({ autoScoutEnabled: false });
+    autoScoutProgress = {
+        ...autoScoutProgress,
+        active: false,
+        paused: false,
+        pauseReason: '',
+        requestedAt: 0,
+        lastUpdated: Date.now()
+    };
+    await chrome.storage.local.set({ autoScoutEnabled: false, autoScoutProgress });
     const tabs = await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] });
     await Promise.allSettled(tabs.map(tab =>
         chrome.tabs.sendMessage(tab.id, { type: 'AUTO_SCOUT_TOGGLE', data: { enabled: false } })
     ));
 }
 
-function getNextTopicIndex(campaign) {
+function getNextTopicIndex(campaign, progressKey = 'generatedCount') {
     const { topics, activeTopicIndex, topicExecutionMode } = campaign;
     if (!topics.length) return -1;
     if (topicExecutionMode === 'drain-topic') {
         const current = topics[activeTopicIndex];
-        if (current && current.generatedCount < current.targetPostCount && current.status !== 'error') return activeTopicIndex;
+        if (current && Number(current[progressKey] || 0) < current.targetPostCount && current.status !== 'error') return activeTopicIndex;
         for (let i = 1; i <= topics.length; i++) {
             const idx = (activeTopicIndex + i) % topics.length;
-            if (topics[idx].generatedCount < topics[idx].targetPostCount && topics[idx].status !== 'error') return idx;
+            if (Number(topics[idx][progressKey] || 0) < topics[idx].targetPostCount && topics[idx].status !== 'error') return idx;
         }
         return -1;
     }
     for (let i = 0; i < topics.length; i++) {
         const idx = (activeTopicIndex + i) % topics.length;
-        if (topics[idx].generatedCount < topics[idx].targetPostCount && topics[idx].status !== 'error') return idx;
+        if (Number(topics[idx][progressKey] || 0) < topics[idx].targetPostCount && topics[idx].status !== 'error') return idx;
     }
     return -1;
 }
@@ -1707,8 +1775,58 @@ function getNextTopicIndex(campaign) {
 async function runCampaignTick() {
     const campaign = await getCampaign();
     if (!campaign || campaign.status !== 'running') return;
-    if (campaign.phase === 'generating') await runCampaignGeneratePhase(campaign);
+    if (campaign.phase === 'collecting') await runCampaignCollectPhase(campaign);
+    else if (campaign.phase === 'generating') await runCampaignGeneratePhase(campaign);
     else if (campaign.phase === 'quoting') await runCampaignQuotePhase(campaign);
+}
+
+async function runCampaignCollectPhase(campaign) {
+    const allCollected = campaign.topics.every(t => (t.foundCount || 0) >= t.targetPostCount || t.status === 'error');
+    if (allCollected) {
+        await stopAutoScoutForCampaign();
+        campaign.phase = 'generating';
+        campaign.topics = campaign.topics.map(t => ({
+            ...t,
+            status: t.status === 'error' ? 'error' : ((t.generatedCount || 0) >= t.targetPostCount ? 'completed' : 'queued')
+        }));
+        await saveCampaign(campaign);
+        await broadcastStatus('processing', 'เก็บโพสต์ครบแล้ว เริ่มสร้างคอนเทนต์จาก Queue');
+        await startProcessQueueFromStorage({ campaignId: campaign.id });
+        return;
+    }
+
+    const nextIdx = getNextTopicIndex(campaign, 'foundCount');
+    if (nextIdx < 0) {
+        await stopAutoScoutForCampaign();
+        campaign.phase = 'generating';
+        await saveCampaign(campaign);
+        await startProcessQueueFromStorage({ campaignId: campaign.id });
+        return;
+    }
+
+    const nextTopic = campaign.topics[nextIdx];
+    if (isCampaignScoutHealthy(nextTopic?.topic)) {
+        await scheduleChromeAlarm(CAMPAIGN_ALARM, 15000);
+        return;
+    }
+
+    await activateTopicScout(campaign, nextIdx);
+}
+
+async function pauseCampaignForLimit(reason) {
+    const campaign = await getCampaign();
+    if (!campaign || campaign.status !== 'running') return;
+
+    await stopAutoScoutForCampaign();
+    await clearAutoQuoteAlarm(CAMPAIGN_ALARM);
+    campaign.status = 'paused';
+    campaign.lastError = reason;
+    campaign.topics = campaign.topics.map(topic => ({
+        ...topic,
+        status: topic.status === 'running' ? 'pending' : topic.status,
+        errorMessage: topic.status === 'running' ? reason : topic.errorMessage || ''
+    }));
+    await saveCampaign(campaign);
 }
 
 async function runCampaignGeneratePhase(campaign) {
@@ -1727,12 +1845,32 @@ async function runCampaignGeneratePhase(campaign) {
         await runCampaignQuotePhase(campaign);
         return;
     }
-    if (isAiBusy()) { await scheduleChromeAlarm(CAMPAIGN_ALARM, 8000); return; }
-    const nextIdx = getNextTopicIndex(campaign);
-    if (nextIdx < 0) {
-        campaign.phase = 'quoting'; await saveCampaign(campaign); await runCampaignQuotePhase(campaign); return;
+
+    const queueState = await getCampaignQueueState(campaign.id);
+    if (queueState.pending === 0 && !isAiBusy()) {
+        const hasGenerated = campaign.topics.some(t => t.generatedCount > 0);
+        if (!hasGenerated) {
+            campaign.status = 'completed';
+            campaign.phase = 'completed';
+            campaign.completedAt = new Date().toISOString();
+            campaign.lastError = queueState.error > 0 ? 'Queue ของ campaign จบลงก่อนจะสร้าง draft ได้ครบ' : '';
+            await saveCampaign(campaign);
+            await broadcastStatus('done', 'Campaign เสร็จ - ไม่มี draft ที่สร้างได้');
+            return;
+        }
+
+        campaign.phase = 'quoting';
+        await saveCampaign(campaign);
+        await broadcastStatus('processing', 'สร้าง Draft จาก Queue ครบแล้ว เริ่ม Auto Quote');
+        await runCampaignQuotePhase(campaign);
+        return;
     }
-    await activateTopicScout(campaign, nextIdx);
+
+    if (!isAiBusy() && queueState.pending > 0) {
+        await startProcessQueueFromStorage({ campaignId: campaign.id });
+    }
+
+    await scheduleChromeAlarm(CAMPAIGN_ALARM, 5000);
 }
 
 async function activateTopicScout(campaign, topicIndex) {
@@ -1746,29 +1884,154 @@ async function activateTopicScout(campaign, topicIndex) {
     isAutoScoutEnabled = true;
     const settings = await ensureSettings();
     autoScoutProgress = {
-        ...createInitialProgress(), active: true, query: autoScoutQuery,
+        ...createInitialProgress(), active: false, query: autoScoutQuery,
         product: contextProduct, productLink,
-        manualAssist: false, scrollPreset: settings.scrollPreset || 'medium', lastUpdated: Date.now()
+        manualAssist: false,
+        scrollPreset: settings.scrollPreset || 'medium',
+        requestedAt: Date.now(),
+        lastUpdated: 0
     };
     await chrome.storage.local.set({ autoScoutEnabled: true, autoScoutQuery, contextProduct, productLink, autoScoutProgress });
-    let tabs = await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] });
+    const desiredUrl = buildXSearchUrl(autoScoutQuery);
+    let targetTabId = null;
+    const tabs = await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] });
+
     if (tabs.length === 0) {
-        await chrome.tabs.create({ url: 'https://x.com/explore/tabs/trending' });
-        await sleep(2000);
-        tabs = await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] });
+        const createdTab = await chrome.tabs.create({ url: desiredUrl, active: true });
+        targetTabId = createdTab?.id || null;
     } else {
         const currentWindow = await chrome.windows.getCurrent();
         const preferredTab = tabs.find(tab => tab.active && tab.windowId === currentWindow.id) || tabs[0];
-        await chrome.tabs.update(preferredTab.id, { url: 'https://x.com/explore/tabs/trending', active: true });
+        const preferredUrl = String(preferredTab.url || '');
+        targetTabId = preferredTab.id;
+
+        if (!isMatchingXSearchUrl(preferredUrl, autoScoutQuery)) {
+            await chrome.tabs.update(preferredTab.id, { url: desiredUrl, active: true });
+        } else {
+            await chrome.tabs.update(preferredTab.id, { active: true });
+        }
     }
-    await Promise.allSettled(
-        tabs.map(tab => chrome.tabs.sendMessage(tab.id, {
+
+    if (Number.isInteger(targetTabId)) {
+        await waitForTabComplete(targetTabId, 20000);
+        await sendMessageToTab(targetTabId, {
             type: 'AUTO_SCOUT_TOGGLE',
-            data: { enabled: true, query: autoScoutQuery, product: contextProduct, productLink }
-        }))
-    );
-    await broadcastStatus('processing', `Campaign: หาโพสต์สำหรับ "${topic.topic}" (${topic.generatedCount}/${topic.targetPostCount})`);
+            data: { enabled: true, query: autoScoutQuery, product: contextProduct, productLink, campaignMode: true }
+        }).catch(() => null);
+    }
+
+    await broadcastStatus('processing', `Campaign: หาโพสต์สำหรับ "${topic.topic}" (${topic.foundCount || 0}/${topic.targetPostCount})`);
     await scheduleChromeAlarm(CAMPAIGN_ALARM, 30000);
+}
+
+function buildXSearchUrl(query) {
+    const normalizedQuery = String(query || '').trim();
+    const encodedQuery = encodeURIComponent(normalizedQuery);
+    return `https://x.com/search?q=${encodedQuery}&src=typed_query`;
+}
+
+function isMatchingXSearchUrl(url, query) {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (!normalizedQuery || !url) return false;
+
+    try {
+        const parsed = new URL(url);
+        if (!/^(x|twitter)\.com$/i.test(parsed.hostname.replace(/^www\./i, ''))) return false;
+        if (!parsed.pathname.startsWith('/search')) return false;
+        const currentQuery = String(parsed.searchParams.get('q') || '').trim().toLowerCase();
+        const currentFilter = String(parsed.searchParams.get('f') || '').trim().toLowerCase();
+        return currentQuery === normalizedQuery && currentFilter !== 'live';
+    } catch {
+        return false;
+    }
+}
+
+function isCampaignScoutHealthy(query) {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (!normalizedQuery) return false;
+    if (!isAutoScoutEnabled) return false;
+
+    const activeQuery = String(autoScoutProgress?.query || autoScoutQuery || '').trim().toLowerCase();
+    if (activeQuery !== normalizedQuery) return false;
+
+    const lastUpdated = Number(autoScoutProgress?.lastUpdated || 0);
+    const requestedAt = Number(autoScoutProgress?.requestedAt || 0);
+    const activeAgeMs = lastUpdated > 0 ? (Date.now() - lastUpdated) : Number.POSITIVE_INFINITY;
+    const launchAgeMs = requestedAt > 0 ? (Date.now() - requestedAt) : Number.POSITIVE_INFINITY;
+
+    if (Boolean(autoScoutProgress?.active) && activeAgeMs >= 0 && activeAgeMs < 90000) {
+        return true;
+    }
+
+    if (!autoScoutProgress?.active && launchAgeMs >= 0 && launchAgeMs < 25000) {
+        return true;
+    }
+
+    return false;
+}
+
+async function handleCampaignScoutNoResults(payload) {
+    const campaign = await getCampaign();
+    if (!campaign || campaign.status !== 'running' || campaign.phase !== 'collecting') {
+        return { success: true, ignored: true };
+    }
+
+    const topicIdx = campaign.activeTopicIndex;
+    const topic = campaign.topics[topicIdx];
+    const payloadQuery = String(payload?.query || '').trim().toLowerCase();
+    if (!topic || (payloadQuery && payloadQuery !== String(topic.topic || '').trim().toLowerCase())) {
+        return { success: true, ignored: true };
+    }
+
+    campaign.topics[topicIdx] = {
+        ...topic,
+        status: 'error',
+        errorMessage: 'ไม่พบผลลัพธ์ใน X สำหรับหัวข้อนี้',
+        lastProcessedAt: new Date().toISOString()
+    };
+    campaign.lastError = `ไม่พบผลลัพธ์สำหรับ ${topic.topic}`;
+    await saveCampaign(campaign);
+    await stopAutoScoutForCampaign();
+    await broadcastStatus('processing', `ไม่พบผลลัพธ์สำหรับ "${topic.topic}" ข้ามไปหัวข้อถัดไป`);
+    await runCampaignTick();
+    return { success: true };
+}
+
+async function onCampaignPostQueued(campaignId, topicId, sourceUrl = '') {
+    const campaign = await getCampaign();
+    if (!campaign || campaign.id !== campaignId || campaign.status !== 'running' || campaign.phase !== 'collecting') return;
+
+    const topicIdx = campaign.topics.findIndex(t => t.id === topicId);
+    if (topicIdx < 0) return;
+
+    const topic = campaign.topics[topicIdx];
+    const nextFoundCount = (topic.foundCount || 0) + 1;
+    campaign.topics[topicIdx] = {
+        ...topic,
+        foundCount: nextFoundCount,
+        status: nextFoundCount >= topic.targetPostCount ? 'queued' : 'running',
+        lastProcessedAt: new Date().toISOString(),
+        lastSourceUrl: sourceUrl || topic.lastSourceUrl || ''
+    };
+
+    if (campaign.topicExecutionMode === 'round-robin') {
+        campaign.activeTopicIndex = (topicIdx + 1) % campaign.topics.length;
+    } else {
+        campaign.activeTopicIndex = topicIdx;
+    }
+
+    await saveCampaign(campaign);
+
+    const shouldAdvanceImmediately = campaign.topicExecutionMode === 'round-robin'
+        || nextFoundCount >= topic.targetPostCount;
+
+    if (shouldAdvanceImmediately) {
+        await stopAutoScoutForCampaign();
+        await runCampaignTick();
+        return;
+    }
+
+    await scheduleChromeAlarm(CAMPAIGN_ALARM, 1200);
 }
 
 async function onCampaignDraftCreated(draft) {
@@ -1782,12 +2045,38 @@ async function onCampaignDraftCreated(draft) {
     campaign.topics[topicIdx].lastSourceUrl = draft.sourceUrl || '';
     if (campaign.topics[topicIdx].generatedCount >= campaign.topics[topicIdx].targetPostCount) {
         campaign.topics[topicIdx].status = 'completed';
-    }
-    if (campaign.topicExecutionMode === 'round-robin') {
-        campaign.activeTopicIndex = (campaign.activeTopicIndex + 1) % campaign.topics.length;
+    } else if (campaign.phase === 'generating') {
+        campaign.topics[topicIdx].status = 'generating';
     }
     await saveCampaign(campaign);
     await scheduleChromeAlarm(CAMPAIGN_ALARM, 3000);
+}
+
+async function onCampaignDraftPosted(draft) {
+    const campaign = await getCampaign();
+    if (!campaign || campaign.id !== draft.campaignId) return;
+
+    const topicIdx = campaign.topics.findIndex(t => t.id === draft.topicId);
+    if (topicIdx < 0) return;
+
+    campaign.topics[topicIdx] = {
+        ...campaign.topics[topicIdx],
+        quotedCount: (campaign.topics[topicIdx].quotedCount || 0) + 1,
+        lastProcessedAt: new Date().toISOString()
+    };
+
+    await saveCampaign(campaign);
+}
+
+async function getCampaignQueueState(campaignId) {
+    const { processQueue = [] } = await chrome.storage.local.get('processQueue');
+    const items = processQueue.filter(item => item.campaignId === campaignId);
+    return {
+        total: items.length,
+        pending: items.filter(item => !['done', 'error'].includes(item.queueStatus || 'queued')).length,
+        error: items.filter(item => (item.queueStatus || 'queued') === 'error').length,
+        done: items.filter(item => (item.queueStatus || 'queued') === 'done').length
+    };
 }
 
 async function runCampaignQuotePhase(campaign) {
@@ -1809,7 +2098,13 @@ async function runCampaignQuotePhase(campaign) {
         await updateDraft({ id: d.id, status: 'auto_quote_queued', postError: '' });
     }
     autoQuoteStartRequested = true;
-    await updateAutoQuoteState({ active: true, phase: 'starting', pendingCount: orderedDrafts.length, message: 'Campaign Quote เริ่มต้น' });
+    await updateAutoQuoteState({
+        active: true,
+        phase: 'starting',
+        campaignId: campaign.id,
+        pendingCount: orderedDrafts.length,
+        message: 'Campaign Quote เริ่มต้น'
+    });
     await runAutoQuoteCycle('campaign');
 }
 
@@ -1899,6 +2194,7 @@ async function updateAutoScoutProgress(progress) {
         product: contextProduct,
         productLink,
         active: isAutoScoutEnabled,
+        requestedAt: autoScoutProgress?.requestedAt || Date.now(),
         lastUpdated: Date.now()
     };
     await chrome.storage.local.set({ autoScoutProgress });
