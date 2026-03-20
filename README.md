@@ -184,7 +184,7 @@ behavior ที่ harden แล้ว:
 ## Current Limits
 
 - พึ่งพา DOM ของ X, Grok, Gemini สูงมาก
-- ไม่มี automated tests
+- ยังไม่มี browser automation harness สำหรับ X/Gemini แบบ deterministic
 - `background.js` ยังใหญ่และรวมหลาย responsibility
 - AI queue ยังใช้ทั้ง memory และ storage
 - Google Trends เป็น helper แบบ best-effort
@@ -195,6 +195,7 @@ behavior ที่ harden แล้ว:
 - `doc/2026-03-19-knowledge-base.md`: knowledge base หลักของ snapshot ปัจจุบัน
 - `doc/2026-03-19-update.md`: changelog ของรอบ implement วันนี้
 - `doc/2026-03-19-full-auto-stability.md`: ปัญหา runtime และแนวทางแก้ของ Full Auto
+- `doc/2026-03-20-gemini-browser-truth-phase5.md`: คู่มือ manual smoke และ decision matrix สำหรับ Gemini phase 5
 - `doc/code_review.md`: grounded code review
 - `doc/release_readiness.md`: release risk และ smoke-test checklist
 - `doc/implement_plan.md`: แผน Full Automate Home ที่ใช้เป็นฐาน implementation

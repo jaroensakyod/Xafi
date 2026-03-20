@@ -11,6 +11,7 @@
 - ใช้งานจริงได้ใน flow หลัก
 - เหมาะกับ internal use หรือใช้งานโดยคนที่เข้าใจระบบ
 - ยังไม่ควรสื่อสารว่าเป็น extension ที่ stable ต่อ UI changes ของ X/Grok
+- Gemini phase 5 browser truth ยังต้องยืนยันบน Chrome จริงจาก `dist/`
 
 ## สิ่งที่พร้อมแล้ว
 
@@ -24,16 +25,17 @@
 - prompt mode และ output normalization ทำให้ draft มีรูปแบบสม่ำเสมอขึ้น
 - prompt และข้อความสุดท้ายมี normalization ฝั่ง background
 - error diagnostics จาก editor ตอนนี้ไม่มี
+- unit tests สำหรับ Gemini seam/runtime parity/send readiness มีแล้วและผ่าน hard gate ล่าสุด
 
 ## สิ่งที่ยังเป็นหนี้เทคนิค
 
-### 1. ไม่มี automated tests
+### 1. ยังไม่มี browser automation harness เต็มรูปแบบ
 
 ผลกระทบ:
 
-- regression จับช้า
-- refactor `background.js` ยาก
-- parser/formatter เปลี่ยนแล้วมั่นใจยาก
+- regression เชิง DOM/live browser ยังต้องพึ่ง manual smoke
+- refactor `background.js` ยังต้องระวัง เพราะ unit tests ยังไม่ครอบ orchestration ทั้งก้อน
+- browser truth ของ Gemini/X ยังอาจ fail แม้ unit tests ผ่าน
 
 ### 2. ไม่มี `.git` แยกในโฟลเดอร์นี้แต่แรก
 
@@ -75,8 +77,17 @@
 4. ลดการใช้ popup blocking ใน side panel
 5. เพิ่ม smoke test checklist ก่อนปล่อยทุกครั้ง
 6. ทดสอบ Auto Quote หลัง `chrome://extensions` reload เพื่อยืนยัน permission `alarms` ทำงานตามคาด
+7. ทำ phase 5 Gemini ตาม `doc/2026-03-20-gemini-browser-truth-phase5.md` แล้วตัดสิน go/iterate/rollback จาก evidence จริง
 
 ## Smoke Test Checklist
+
+### Gemini browser truth
+
+- โหลด unpacked extension จาก `dist/`
+- queue 1 item บน Gemini cold-open ต้องพิมพ์เข้า visible composer จริง
+- ต้องเห็น stage `prompt-visible` ก่อน `send-ready`
+- ถ้า fail ต้องได้ error แบบ readiness/send-start ที่ชี้ stage ชัด ไม่ใช่ selector error แบบเดิม
+- queue 2 items ต้องไม่เกิด pattern `item แรก fail / item สอง pass` เพราะ race เดิม
 
 ### X scan
 
@@ -123,6 +134,7 @@ milestone ถัดไปที่คุ้มที่สุด:
 - add queue watchdog
 - add debug mode
 - add unit tests for text utilities
+- complete phase 5 browser-truth runbook in `doc/2026-03-20-gemini-browser-truth-phase5.md`
 
 ## Snapshot Notes
 
