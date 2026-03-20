@@ -45,6 +45,12 @@ describe('structural parity: content_ai.js wiring markers', () => {
     expect(runtimeSource).toContain('function collectResponseElements(');
   });
 
+  it('contains composer readiness helpers for Gemini cold-open flow', () => {
+    expect(runtimeSource).toContain('function waitForComposerReady(');
+    expect(runtimeSource).toContain('function findVisibleComposerInput(');
+    expect(runtimeSource).toContain('function waitForVisiblePrompt(');
+  });
+
   it('routes Gemini through selectGeminiResponse in getLastAIMessage', () => {
     // The runtime getLastAIMessage must call selectGeminiResponse for Gemini
     expect(runtimeSource).toMatch(/if\s*\(aiProvider\.key\s*===\s*'gemini'\)/);
@@ -60,6 +66,11 @@ describe('structural parity: content_ai.js wiring markers', () => {
   it('keeps Grok on legacy score-based path', () => {
     // After the Gemini branch, the fallthrough must still use score ranking
     expect(runtimeSource).toContain('.sort((a, b) => b.score - a.score)');
+  });
+
+  it('waits for composer readiness before using the Gemini input', () => {
+    expect(runtimeSource).toContain('const inputEl = await waitForComposerReady(20000);');
+    expect(runtimeSource).toContain('const visiblePromptInput = await waitForVisiblePrompt(prompt, 3000);');
   });
 });
 

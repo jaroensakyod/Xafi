@@ -126,13 +126,15 @@
         isProcessingPrompt = true;
         activeRequestId = requestId || `req-${Date.now()}`;
 
-        updateStatus('กำลังหากล่องพิมพ์...');
+        updateStatus('stage=page-ready กำลังรอ composer ที่พร้อมใช้งาน...');
 
-        // 2.1) หากล่อง Input
-        const inputEl = await waitForElement(INPUT_SELECTORS, 15000);
+        // 2.1) รอ visible composer/input ที่พร้อมจริง
+        const inputEl = await waitForComposerReady(20000);
         if (!inputEl) {
-            throw new Error(`ไม่พบช่องพิมพ์บน ${aiProvider.label} - DOM อาจเปลี่ยนแปลง`);
+            throw new Error(`ไม่พบ visible composer บน ${aiProvider.label} - หน้าอาจยังไม่พร้อมหรือ DOM เปลี่ยนแปลง`);
         }
+
+        updateStatus('stage=composer-found พบ visible composer แล้ว');
 
         // 2.2) เคลียร์ข้อความเก่า (ถ้ามี)
         await clearInput(inputEl);
@@ -144,14 +146,21 @@
         updateStatus('กำลังพิมพ์ Prompt...');
         await fillPromptInput(inputEl, prompt, settings);
 
+        const visiblePromptInput = await waitForVisiblePrompt(prompt, 3000);
+        if (!visiblePromptInput) {
+            throw new Error(`ใส่ prompt ลง ${aiProvider.label} visible composer ไม่สำเร็จ`);
+        }
+
+        updateStatus('stage=prompt-visible ข้อความอยู่ใน visible composer แล้ว');
+
         // 2.4) รอสักครู่ก่อนกด Send (เหมือนคนอ่านทวนอีกที)
         await sleep(randomBetween(800, 1500));
 
         // 2.5) กดปุ่ม Send
         updateStatus('กำลังส่ง Prompt...');
-        await clickSendButton(inputEl);
+        await clickSendButton(visiblePromptInput);
 
-        const sendStarted = await waitForSendStart(inputEl, 10000);
+        const sendStarted = await waitForSendStart(visiblePromptInput, 10000);
         if (!sendStarted) {
             throw new Error('กดส่ง Prompt ไม่สำเร็จ');
         }
@@ -338,6 +347,123 @@
         element.dispatchEvent(new KeyboardEvent('keydown', eventInit));
         element.dispatchEvent(new KeyboardEvent('keypress', eventInit));
         element.dispatchEvent(new KeyboardEvent('keyup', eventInit));
+    }
+
+    async function waitForComposerReady(timeout = 15000) {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeout) {
+            const input = findVisibleComposerInput();
+            if (input) {
+                return input;
+            }
+            await sleep(200);
+        }
+
+        return null;
+    }
+
+    async function waitForVisiblePrompt(promptText, timeout = 3000) {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeout) {
+            const input = findPromptVisibleInput(promptText);
+            if (input) {
+                return input;
+            }
+            await sleep(150);
+        }
+
+        return null;
+    }
+
+    function findVisibleComposerInput(root = document) {
+        const candidates = collectComposerCandidates(root)
+            .map(element => ({
+                element,
+                score: scoreComposerCandidate(element)
+            }))
+            .filter(candidate => candidate.score > -1000)
+            .sort((a, b) => b.score - a.score);
+
+        return candidates[0]?.element || null;
+    }
+
+    function findPromptVisibleInput(promptText, root = document) {
+        const normalizedPrompt = normalizePromptText(promptText);
+        if (!normalizedPrompt) return null;
+
+        const candidates = collectComposerCandidates(root)
+            .map(element => ({
+                element,
+                score: scoreComposerCandidate(element)
+            }))
+            .filter(candidate => candidate.score > -1000)
+            .sort((a, b) => b.score - a.score);
+
+        return candidates.find(candidate => composerContainsText(candidate.element, normalizedPrompt))?.element || null;
+    }
+
+    function collectComposerCandidates(root = document) {
+        const seen = new Set();
+        const results = [];
+
+        for (const selector of INPUT_SELECTORS) {
+            root.querySelectorAll(selector).forEach((element) => {
+                if (seen.has(element)) return;
+                seen.add(element);
+                results.push(element);
+            });
+        }
+
+        return results;
+    }
+
+    function scoreComposerCandidate(element) {
+        if (!element || !isWritableComposerInput(element) || !isVisible(element)) {
+            return -1000;
+        }
+
+        const descriptor = `${element.getAttribute('aria-label') || ''} ${element.getAttribute('placeholder') || ''} ${element.getAttribute('data-placeholder') || ''}`.toLowerCase();
+        let score = 0;
+
+        if (element.matches('rich-textarea div[contenteditable="true"]')) score += 180;
+        if (element.closest('rich-textarea')) score += 120;
+        if (element.closest('form')) score += 40;
+        if (element.matches('[contenteditable="true"]')) score += 35;
+        if (element.matches('textarea')) score += 25;
+        if (element.getAttribute('role') === 'textbox') score += 20;
+        if (/enter a prompt|ask gemini|gemini 3|gemini|ป้อนความช่วยเหลือจาก gemini|เขียนอะไร/i.test(descriptor)) score += 140;
+        if (element === document.activeElement) score += 30;
+        if (element.closest('[aria-hidden="true"], [hidden], [inert]')) score -= 500;
+
+        return score;
+    }
+
+    function isWritableComposerInput(element) {
+        if (!element) return false;
+
+        if (typeof element.disabled === 'boolean' && element.disabled) return false;
+        if (typeof element.readOnly === 'boolean' && element.readOnly) return false;
+
+        const contentEditable = element.getAttribute('contenteditable');
+        if (contentEditable !== null) {
+            return contentEditable !== 'false';
+        }
+
+        return element.matches('textarea, input, [role="textbox"]');
+    }
+
+    function composerContainsText(element, promptText) {
+        const current = normalizePromptText(getInputText(element));
+        if (!current || !promptText) return false;
+
+        const sample = promptText.slice(0, Math.min(promptText.length, 24));
+        return current.includes(sample);
+    }
+
+    function normalizePromptText(text) {
+        return String(text || '')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     // =============================================
@@ -716,12 +842,8 @@
     }
 
     function inputContainsText(element, text) {
-        const current = getInputText(element)
-            .replace(/\s+/g, ' ')
-            .trim();
-        const expected = String(text || '')
-            .replace(/\s+/g, ' ')
-            .trim();
+        const current = normalizePromptText(getInputText(element));
+        const expected = normalizePromptText(text);
         if (!current || !expected) return false;
 
         const sampleLength = aiProvider.key === 'gemini' ? 20 : 32;
