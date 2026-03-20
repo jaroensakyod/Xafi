@@ -16,7 +16,6 @@
     let lastCompletedRequestId = null;
     const aiProvider = getAiProviderMeta();
     const XVRAI_DETECT_DEBUG = false; // Phase 4: set true for response-detection tracing
- 
 
     // --- Selectors แบบยืดหยุ่น (อัปเดตได้เมื่อ DOM เปลี่ยน) ---
     const INPUT_SELECTORS = [
@@ -499,8 +498,7 @@
     // =============================================
     function getLastAIMessage(promptText = '', baselineCandidates = new Set()) {
         const candidates = collectResponseCandidates()
-            .map(text => stripPromptEchoWrapper(text, promptText))
-            .filter(text => text && !baselineCandidates.has(text))
+            .filter(text => !baselineCandidates.has(text))
             .filter(text => !isPromptEcho(text, promptText));
 
         if (!candidates.length) return null;
@@ -529,15 +527,12 @@
 
         // Provider-specific: targeted selectors first (most specific → broader)
         if (aiProvider.key === 'gemini') {
-            // Primary: prefer model-response surfaces and ignore likely user-turn containers
-            document.querySelectorAll('model-response .markdown, .model-response-text .markdown, [class*="model-response"] .markdown').forEach(el => {
-                if (isGeminiResponseElement(el)) {
-                    pushUnique(el.innerText?.trim());
-                }
+            // Primary: .markdown inside response containers = cleanest answer text
+            document.querySelectorAll('model-response .markdown, message-content .markdown').forEach(el => {
+                pushUnique(el.innerText?.trim());
             });
             // Broader Gemini containers as fallback
-            document.querySelectorAll('model-response, .response-content, .model-response-text, [class*="model-response"]').forEach(el => {
-                if (!isGeminiResponseElement(el)) return;
+            document.querySelectorAll('model-response, message-content, .response-content, .model-response-text').forEach(el => {
                 const text = el.innerText?.trim();
                 if (text && !isAccessoryContent(text)) pushUnique(text);
             });
@@ -546,14 +541,12 @@
         // Generic response selectors
         for (const selector of RESPONSE_SELECTORS) {
             document.querySelectorAll(selector).forEach(el => {
-                if (aiProvider.key === 'gemini' && !isGeminiResponseElement(el)) return;
                 pushUnique(el.innerText?.trim());
             });
         }
 
         // Broad fallback (deprioritized)
         document.querySelectorAll('[class*="message"], [class*="Message"], .prose, [class*="markdown"], [class*="Markdown"]').forEach(el => {
-            if (aiProvider.key === 'gemini' && !isGeminiResponseElement(el)) return;
             pushUnique(el.innerText?.trim());
         });
 
@@ -585,21 +578,8 @@
         return false;
     }
 
-    function isGeminiResponseElement(element) {
-        if (!element) return false;
-
-        const responseContainer = element.closest('model-response, [class*="model-response"], .response-content, .model-response-text');
-        if (!responseContainer) return false;
-
-        const userTurnContainer = element.closest('user-query, user-message, [class*="user-query"], [class*="user-message"], [class*="query-text"], [class*="prompt"], [data-testid*="user"], [data-message-author="user"]');
-        return !userTurnContainer;
-    }
-
     function isPromptEcho(candidateText, promptText) {
-        const strippedCandidate = stripPromptEchoWrapper(candidateText, promptText);
-        if (!strippedCandidate) return true;
-
-        const candidate = sanitizeComparableText(strippedCandidate);
+        const candidate = sanitizeComparableText(candidateText);
         const prompt = sanitizeComparableText(promptText);
 
         if (!candidate || !prompt) return false;
@@ -610,40 +590,6 @@
 
         const overlap = longestCommonPrefix(candidate, prompt).length;
         return overlap >= Math.min(120, Math.floor(prompt.length * 0.6));
-    }
-
-    function stripPromptEchoWrapper(text, promptText = '') {
-        const original = String(text || '').trim();
-        if (!original) return '';
-
-        const lines = original
-            .split('\n')
-            .map(line => line.trim())
-            .filter(Boolean);
-
-        if (!lines.length) return '';
-
-        const leadInPattern = /^(you said|you asked|you wrote|you told me|your instructions?|your prompt|instruction recap|คุณบอกว่า|คุณถามว่า|คุณเขียนว่า|คุณสั่งว่า)/i;
-        const firstLine = lines[0] || '';
-        const hasLeadIn = leadInPattern.test(firstLine);
-        if (!hasLeadIn) return original;
-
-        const prompt = sanitizeComparableText(promptText);
-        if (!prompt) return original;
-
-        const remainder = lines.slice(1).join('\n').trim();
-        const normalizedRemainder = sanitizeComparableText(remainder);
-        const promptHead = prompt.slice(0, Math.min(prompt.length, 120));
-        const promptOverlap = longestCommonPrefix(normalizedRemainder, prompt).length;
-        const looksInstructionLike = looksLikePromptInstructions(remainder);
-
-        if (!normalizedRemainder) return '';
-
-        if (normalizedRemainder.includes(promptHead) || promptOverlap >= Math.min(120, Math.floor(prompt.length * 0.5)) || looksInstructionLike) {
-            return '';
-        }
-
-        return remainder || original;
     }
 
     function sanitizeComparableText(text) {
@@ -719,17 +665,9 @@
         // Noise penalties
         if (isMostlyUrl(clean)) score -= 300;
         if (isAccessoryContent(clean)) score -= 400;
-        if (looksLikePromptInstructions(clean)) score -= 700;
         if (/executed code|searching|thinking|analyzing|read more|sources?|search results?|used tools?|reasoned for|google ai studio|gemini can make mistakes|draft saved/i.test(text)) score -= 500;
 
         return score;
-    }
-
-    function looksLikePromptInstructions(text) {
-        const cleaned = sanitizeComparableText(text);
-        if (!cleaned) return false;
-
-        return /(หน้าที่ของคุณคือ|โทนที่ต้องได้|เนื้อหาต้นทางด้านล่าง|you are writing|source content below|tone (that )?must|write an x post|write a thai x post|เหมือนคนเล่น x|reply in thai|human-like x post|your task is to write)/i.test(cleaned);
     }
 
     function isToolStatusLine(line) {
