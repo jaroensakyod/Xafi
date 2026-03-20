@@ -3,9 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:dist": "node scripts/build-dist.mjs"
+    "build:dist": "node scripts/build-dist.mjs",
+    "test:unit": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
-    "javascript-obfuscator": "^4.1.1"
+    "javascript-obfuscator": "^4.1.1",
+    "jsdom": "^29.0.0",
+    "vitest": "^4.1.0"
   }
 }
