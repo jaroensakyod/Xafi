@@ -21,6 +21,7 @@ import {
   buildGeminiConversation,
   buildIntermediateOutranksFinal,
   buildMixedGeminiPage,
+  buildContaminatedGeminiPage,
 } from '../helpers/gemini-fixtures.js';
 
 describe('collectResponseCandidates', () => {
@@ -231,10 +232,7 @@ describe('getLastAIMessage', () => {
     expect(result).toBe(finalText);
   });
 
-  it('FIXED (Phase 4): position-first selects last valid node, not highest score', () => {
-    // Phase 4 position-first logic walks from the LAST DOM element backward.
-    // The last element "มีอะไรให้ช่วยอีกไหมครับ?" is valid (not suspicious,
-    // length >= 18), so it wins over the higher-scored middle block.
+  it('prefers the real answer over helper follow-up text in the active thread', () => {
     const texts = [
       'สวัสดีครับ ยินดีต้อนรับสู่ Gemini วันนี้จะช่วยอะไรได้บ้างครับ',
       [
@@ -256,7 +254,20 @@ describe('getLastAIMessage', () => {
 
     const result = getLastAIMessage('เขียนรายงานเทค', new Set(), 'gemini', document);
 
-    // Position-first picks the LAST valid node (index 2)
-    expect(result).toContain('มีอะไรให้ช่วยอีกไหมครับ');
+    expect(result).toContain('รายงานเทคโนโลยีประจำสัปดาห์');
+    expect(result).not.toContain('มีอะไรให้ช่วยอีกไหมครับ');
+  });
+
+  it('ignores sidebar contamination outside the active conversation surface', () => {
+    const container = buildContaminatedGeminiPage({
+      answerText: 'นี่คือโพสต์จริงจาก Gemini สำหรับ Shopee ที่ควรถูกเก็บเข้า Xafi เท่านั้น',
+      sidebarText: 'ประวัติการแชทย้อนหลังที่ยาวมากและไม่เกี่ยวกับคำตอบล่าสุดเลย แต่มีข้อความเยอะกว่าเพื่อพยายามแย่งการเลือก',
+      historyText: 'หัวข้อแนะนำจาก sidebar และ recent activity ที่ไม่ควรถูกเลือกเป็นคำตอบสุดท้าย',
+    });
+    document.body.appendChild(container);
+
+    const result = getLastAIMessage('เขียนโพสต์ขายของ', new Set(), 'gemini', document);
+
+    expect(result).toBe('นี่คือโพสต์จริงจาก Gemini สำหรับ Shopee ที่ควรถูกเก็บเข้า Xafi เท่านั้น');
   });
 });

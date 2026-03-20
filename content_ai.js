@@ -880,18 +880,28 @@
 
         if (!filtered.length) return null;
 
-        // Walk from newest (last in DOM) to oldest
-        for (let i = filtered.length - 1; i >= 0; i--) {
-            const candidate = filtered[i];
+        const viable = filtered.filter((candidate) => {
             const clean = sanitizeAIResponseText(candidate.text);
-            if (clean && !isSuspiciousAIResponse(candidate.text)) {
-                return candidate.text;
-            }
+            return clean && !isSuspiciousAIResponse(candidate.text);
+        });
+
+        if (viable.length) {
+            const bestSurfaceRank = Math.max(...viable.map(candidate => candidate.surfaceRank || 0));
+            const bestSurfaceCandidates = viable.filter(candidate => (candidate.surfaceRank || 0) === bestSurfaceRank);
+            const preferredCandidates = bestSurfaceCandidates.some(candidate => candidate.isLeaf)
+                ? bestSurfaceCandidates.filter(candidate => candidate.isLeaf)
+                : bestSurfaceCandidates;
+
+            return preferredCandidates[preferredCandidates.length - 1]?.text || null;
         }
 
-        // Fallback: all candidates suspicious — pick the best-scored one
         const ranked = filtered
-            .map(el => ({ raw: el.text, score: scoreAIResponseCandidate(el.text) }))
+            .map(el => ({
+                raw: el.text,
+                score: scoreAIResponseCandidate(el.text)
+                    + (el.surfaceRank || 0)
+                    + (el.isLeaf ? 40 : 0)
+            }))
             .filter(el => el.score > -1000)
             .sort((a, b) => b.score - a.score);
 
@@ -899,27 +909,66 @@
     }
 
     function collectResponseElements() {
-        const seen = new Set();
-        const results = [];
-
-        const addElement = (element) => {
-            const text = (element.innerText || element.textContent || '').trim();
-            if (!text || seen.has(text)) return;
-            seen.add(text);
-            results.push({ text, index: results.length });
-        };
-
         if (aiProvider.key === 'gemini') {
-            document.querySelectorAll('message-content, model-response, .response-content, .markdown, .model-response-text').forEach(addElement);
+            const activeRoot = findGeminiActiveConversationRoot();
+            if (activeRoot) {
+                const rootedCandidates = collectCandidateElementsFromRoot(
+                    activeRoot,
+                    [
+                        'model-response .markdown',
+                        'message-content .markdown',
+                        '.model-response-text',
+                        '.message-content',
+                        '.markdown-content',
+                        '[data-testid="message-content"]',
+                        'message-content',
+                        'model-response',
+                        '[role="article"]'
+                    ],
+                    {
+                        source: 'active-conversation',
+                        surfaceRank: 300
+                    }
+                );
+
+                if (rootedCandidates.length) {
+                    return rootedCandidates;
+                }
+            }
+
+            return collectCandidateElementsFromRoot(
+                document,
+                [
+                    'model-response',
+                    'message-content',
+                    '.model-response-text',
+                    '.message-content',
+                    '.markdown-content',
+                    '[data-testid="message-content"]',
+                    '[role="article"]'
+                ],
+                {
+                    source: 'document-fallback',
+                    surfaceRank: 100
+                }
+            );
         }
 
-        for (const selector of RESPONSE_SELECTORS) {
-            document.querySelectorAll(selector).forEach(addElement);
-        }
-
-        document.querySelectorAll('[class*="message"], [class*="Message"], .prose, [class*="markdown"], [class*="Markdown"]').forEach(addElement);
-
-        return results;
+        return collectCandidateElementsFromRoot(
+            document,
+            [
+                ...RESPONSE_SELECTORS,
+                '[class*="message"]',
+                '[class*="Message"]',
+                '.prose',
+                '[class*="markdown"]',
+                '[class*="Markdown"]'
+            ],
+            {
+                source: 'document',
+                surfaceRank: 100
+            }
+        );
     }
 
     // collectResponseCandidates: flat text-only list (used for baseline capture)
@@ -987,6 +1036,8 @@
         if (isMostlyUrl(cleaned)) return true;
         if (cleaned.length < 18) return true;
         if (isToolStatusLine(cleaned)) return true;
+        if (isUiFollowUpText(cleaned)) return true;
+        if (isUiChromeText(cleaned)) return true;
 
         return false;
     }
@@ -1004,6 +1055,8 @@
         if (aiProvider.key === 'gemini' && /\n/.test(clean)) score += 40;
         if (isMostlyUrl(clean)) score -= 300;
         if (/executed code|searching|thinking|analyzing|read more|sources?|search results?|used tools?|reasoned for|google ai studio|gemini can make mistakes|draft saved/i.test(text)) score -= 500;
+        if (isUiFollowUpText(clean)) score -= 450;
+        if (isUiChromeText(clean)) score -= 450;
 
         return score;
     }
@@ -1018,6 +1071,118 @@
 
         const withoutUrls = trimmed.replace(/https?:\/\/\S+|www\.\S+/gi, '').trim();
         return withoutUrls.length < 12;
+    }
+
+    function isUiFollowUpText(text) {
+        const cleaned = String(text || '').trim();
+        if (!cleaned) return false;
+
+        return /(?:มีอะไรให้ช่วย(?:อีก|เพิ่มเติม)?ไหม|สามารถถาม(?:คำถาม)?(?:อะไร)?ได้เลย|ถาม(?:คำถาม)?(?:อะไร)?ได้เลย|พร้อมช่วย(?:เสมอ)?|anything else|need anything else|how can i help|feel free to ask|ask me anything)/i.test(cleaned);
+    }
+
+    function isUiChromeText(text) {
+        const cleaned = String(text || '').trim();
+        if (!cleaned) return false;
+
+        return /(?:chat history|recent chats?|recent activity|saved prompts?|show more|new chat|open sidebar|google ai studio|double-check responses|gemini can make mistakes|draft saved)/i.test(cleaned);
+    }
+
+    function findGeminiActiveConversationRoot() {
+        const seeds = Array.from(
+            document.querySelectorAll('model-response, message-content, .model-response-text, .message-content, .markdown-content, [data-testid="message-content"]')
+        ).filter((element) => Boolean((element.innerText || element.textContent || '').trim()));
+
+        const latestSeed = seeds[seeds.length - 1];
+        if (!latestSeed) return null;
+
+        const rootSelectors = [
+            '.conversation-container',
+            '[data-testid*="conversation"]',
+            '[class*="conversation"][class*="container"]',
+            '[class*="conversation"]'
+        ];
+
+        for (const selector of rootSelectors) {
+            const root = latestSeed.closest(selector);
+            if (root && root.querySelector('model-response, message-content')) {
+                return root;
+            }
+        }
+
+        const modelResponse = latestSeed.closest('model-response');
+        if (modelResponse?.parentElement) {
+            return modelResponse.parentElement;
+        }
+
+        return null;
+    }
+
+    function collectCandidateElementsFromRoot(root, selectors, options) {
+        const doc = root.nodeType === 9 ? root : root.ownerDocument;
+        const candidatesByText = new Map();
+        let discoveryOrder = 0;
+
+        for (const selector of selectors) {
+            root.querySelectorAll(selector).forEach((element) => {
+                const text = (element.innerText || element.textContent || '').trim();
+                if (!text) return;
+
+                const candidate = {
+                    text,
+                    element,
+                    selector,
+                    source: options.source,
+                    surfaceRank: options.surfaceRank,
+                    isLeaf: isLeafResponseElement(element),
+                    discoveryOrder
+                };
+                discoveryOrder += 1;
+
+                const existing = candidatesByText.get(text);
+                if (!existing || isPreferredDuplicateCandidate(candidate, existing)) {
+                    candidatesByText.set(text, candidate);
+                }
+            });
+        }
+
+        return finalizeResponseCandidates(candidatesByText, doc);
+    }
+
+    function isPreferredDuplicateCandidate(candidate, existing) {
+        if ((candidate.surfaceRank || 0) !== (existing.surfaceRank || 0)) {
+            return (candidate.surfaceRank || 0) > (existing.surfaceRank || 0);
+        }
+
+        if (Boolean(candidate.isLeaf) !== Boolean(existing.isLeaf)) {
+            return Boolean(candidate.isLeaf);
+        }
+
+        return candidate.discoveryOrder < existing.discoveryOrder;
+    }
+
+    function finalizeResponseCandidates(candidatesByText, doc) {
+        const orderMap = new Map(
+            Array.from(doc.querySelectorAll('*')).map((element, index) => [element, index])
+        );
+
+        return Array.from(candidatesByText.values())
+            .sort((a, b) => (orderMap.get(a.element) ?? 0) - (orderMap.get(b.element) ?? 0))
+            .map((candidate, index) => ({
+                ...candidate,
+                documentOrder: orderMap.get(candidate.element) ?? index,
+                index
+            }));
+    }
+
+    function isLeafResponseElement(element) {
+        if (!element?.matches) return true;
+        if (element.matches('.markdown, .model-response-text, .markdown-content')) return true;
+
+        if (element.matches('message-content, .message-content, [data-testid="message-content"]')) {
+            return !element.querySelector('.markdown, .model-response-text, .markdown-content');
+        }
+
+        return !element.querySelector('model-response, message-content, .model-response-text, .message-content, .markdown, .markdown-content, [data-testid="message-content"]');
     }
 
     function debugAIResponse(label, rawText, cleanedText) {

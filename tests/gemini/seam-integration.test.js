@@ -21,6 +21,7 @@ import {
 import {
   scoreAIResponseCandidate,
   collectResponseCandidates,
+  collectResponseElements,
   getLastAIMessage,
 } from '../../lib/response-collector.js';
 import {
@@ -33,6 +34,7 @@ import {
   buildGeminiConversation,
   buildMixedGeminiPage,
   buildIntermediateOutranksFinal,
+  buildContaminatedGeminiPage,
 } from '../helpers/gemini-fixtures.js';
 
 // =============================================
@@ -168,6 +170,34 @@ describe('response-collector seam: DOM integration', () => {
     const baseline = new Set(['Welcome message already on page before our prompt was sent']);
     const result = getLastAIMessage('test', baseline, 'gemini', document);
     expect(result).toContain('new response');
+  });
+
+  it('collectResponseElements ignores sidebar/history contamination when active conversation root exists', () => {
+    const container = buildContaminatedGeminiPage({
+      answerText: 'คำตอบจริงใน active conversation',
+      sidebarText: 'ข้อความจาก sidebar ที่ไม่ควรถูกเก็บมาปน',
+      historyText: 'recent history ที่ไม่เกี่ยวข้อง',
+    });
+    document.body.appendChild(container);
+
+    const elements = collectResponseElements('gemini', document);
+    const texts = elements.map((element) => element.text);
+
+    expect(texts).toContain('คำตอบจริงใน active conversation');
+    expect(texts).not.toContain('ข้อความจาก sidebar ที่ไม่ควรถูกเก็บมาปน');
+    expect(texts).not.toContain('recent history ที่ไม่เกี่ยวข้อง');
+  });
+
+  it('prefers the leaf answer node over ancestor wrappers with combined text', () => {
+    const container = buildContaminatedGeminiPage({
+      answerText: 'โพสต์สุดท้ายที่ควรถูกเลือก',
+      helperText: 'มีอะไรให้ช่วยอีกไหมครับ สามารถถามคำถามได้เลยนะครับ',
+    });
+    document.body.appendChild(container);
+
+    const result = getLastAIMessage('ช่วยเขียนโพสต์', new Set(), 'gemini', document);
+
+    expect(result).toBe('โพสต์สุดท้ายที่ควรถูกเลือก');
   });
 });
 

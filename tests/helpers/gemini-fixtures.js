@@ -104,3 +104,52 @@ export function buildIntermediateOutranksFinal(opts) {
     { text: opts.finalText },
   ]);
 }
+
+export function buildContaminatedGeminiPage(opts = {}) {
+  const shell = document.createElement('div');
+  shell.className = 'gemini-shell';
+
+  const conversation = document.createElement('div');
+  conversation.className = 'conversation-container';
+
+  const article = document.createElement('section');
+  article.setAttribute('role', 'article');
+  article.className = 'conversation-article';
+
+  article.appendChild(buildSingleResponse(opts.answerText || 'คำตอบจริงจาก Gemini ที่ควรถูกเลือกเป็นคำตอบสุดท้าย'));
+
+  if (opts.helperText) {
+    article.appendChild(buildSingleResponse(opts.helperText));
+  }
+
+  conversation.appendChild(article);
+  shell.appendChild(conversation);
+
+  if (opts.sidebarText) {
+    const sidebar = document.createElement('aside');
+    sidebar.className = 'history-sidebar';
+
+    const sidebarCard = document.createElement('div');
+    sidebarCard.setAttribute('role', 'article');
+    sidebarCard.className = 'sidebar-card';
+    sidebarCard.textContent = opts.sidebarText;
+
+    sidebar.appendChild(sidebarCard);
+    shell.appendChild(sidebar);
+  }
+
+  if (opts.historyText) {
+    const history = document.createElement('section');
+    history.className = 'recent-history';
+
+    const historyCard = document.createElement('div');
+    historyCard.setAttribute('role', 'article');
+    historyCard.className = 'history-card';
+    historyCard.textContent = opts.historyText;
+
+    history.appendChild(historyCard);
+    shell.appendChild(history);
+  }
+
+  return shell;
+}

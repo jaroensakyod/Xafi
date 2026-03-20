@@ -20,6 +20,7 @@ import {
   buildGeminiConversation,
   buildIntermediateOutranksFinal,
   buildMixedGeminiPage,
+  buildContaminatedGeminiPage,
 } from '../helpers/gemini-fixtures.js';
 
 // =============================================
@@ -157,7 +158,7 @@ describe('getLastAIMessage: Gemini position-first', () => {
     expect(result).toContain('คำตอบจริง');
   });
 
-  it('picks correct final from 3+ response blocks', () => {
+  it('does not let helper follow-up text outrank the real answer', () => {
     const container = buildGeminiConversation([
       { text: 'ข้อความต้อนรับจาก Gemini ยินดีต้อนรับครับ' },
       { text: 'เนื้อหาด้านเทคโนโลยีที่ยาวมากๆ\n- จุดที่ 1\n- จุดที่ 2\n- จุดที่ 3\n\n#AI #Tech' },
@@ -166,8 +167,21 @@ describe('getLastAIMessage: Gemini position-first', () => {
     document.body.appendChild(container);
 
     const result = getLastAIMessage('เขียนโพสต์', new Set(), 'gemini', document);
-    // Position-first: picks the LAST valid block
-    expect(result).toContain('มีอะไรให้ช่วยอีกไหมครับ');
+    expect(result).toContain('เนื้อหาด้านเทคโนโลยีที่ยาวมากๆ');
+    expect(result).not.toContain('มีอะไรให้ช่วยอีกไหมครับ');
+  });
+
+  it('anchors Gemini extraction to the active conversation when sidebar text is longer', () => {
+    const container = buildContaminatedGeminiPage({
+      answerText: 'โพสต์ขายของจริงที่ Gemini เพิ่งสร้างเสร็จและอยู่ใน active conversation',
+      sidebarText: 'ข้อความยาวมากจาก sidebar history ที่ไม่เกี่ยวกันแต่เคยทำให้ตัวเลือก document-wide เลือกผิดได้ง่าย',
+      helperText: 'มีอะไรให้ช่วยอีกไหมครับ',
+    });
+    document.body.appendChild(container);
+
+    const result = getLastAIMessage('ช่วยเขียนโพสต์ขายของ', new Set(), 'gemini', document);
+
+    expect(result).toBe('โพสต์ขายของจริงที่ Gemini เพิ่งสร้างเสร็จและอยู่ใน active conversation');
   });
 });
 

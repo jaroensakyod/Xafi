@@ -26,6 +26,7 @@ import {
   buildGeminiConversation,
   buildIntermediateOutranksFinal,
   buildMixedGeminiPage,
+  buildContaminatedGeminiPage,
 } from '../helpers/gemini-fixtures.js';
 
 // =============================================
@@ -43,6 +44,10 @@ describe('structural parity: content_ai.js wiring markers', () => {
 
   it('contains collectResponseElements function', () => {
     expect(runtimeSource).toContain('function collectResponseElements(');
+  });
+
+  it('contains Gemini active conversation root helper', () => {
+    expect(runtimeSource).toContain('function findGeminiActiveConversationRoot(');
   });
 
   it('contains composer readiness helpers for Gemini cold-open flow', () => {
@@ -66,10 +71,9 @@ describe('structural parity: content_ai.js wiring markers', () => {
     expect(runtimeSource).toContain('selectGeminiResponse(elements');
   });
 
-  it('preserves position-first walk pattern (newest to oldest)', () => {
-    expect(runtimeSource).toMatch(
-      /for\s*\(\s*let\s+i\s*=\s*filtered\.length\s*-\s*1;\s*i\s*>=\s*0;\s*i--/
-    );
+  it('preserves active-surface and leaf-answer prioritization markers', () => {
+    expect(runtimeSource).toContain('const bestSurfaceRank = Math.max');
+    expect(runtimeSource).toContain('candidate.isLeaf');
   });
 
   it('keeps Grok on legacy score-based path', () => {
@@ -142,6 +146,19 @@ describe('behavioral parity: Gemini position-first selection', () => {
 
     const result = getLastAIMessage('test', new Set([baseline]), 'gemini', document);
     expect(result).toBe(newResponse);
+  });
+
+  it('ignores sidebar contamination and helper follow-up text in the runtime-equivalent Gemini path', () => {
+    const container = buildContaminatedGeminiPage({
+      answerText: 'คำตอบจริงจาก Gemini ที่ต้องชนะ',
+      sidebarText: 'sidebar history ที่ยาวมากและไม่เกี่ยวกับคำตอบนี้เลย',
+      helperText: 'มีอะไรให้ช่วยอีกไหมครับ สามารถถามคำถามเพิ่มได้เลย',
+    });
+    document.body.appendChild(container);
+
+    const result = getLastAIMessage('ช่วยเขียนโพสต์', new Set(), 'gemini', document);
+
+    expect(result).toBe('คำตอบจริงจาก Gemini ที่ต้องชนะ');
   });
 });
 
