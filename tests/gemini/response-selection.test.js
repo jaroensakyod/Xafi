@@ -128,18 +128,16 @@ describe('getLastAIMessage', () => {
   });
 
   // =============================================
-  // KNOWN BUG CHARACTERIZATION
+  // PHASE 4 FIX: Position-First Selection
   // =============================================
-  // The following tests document the cascading intermediate-block
-  // issue that caused the rollback. The current scoring algorithm
-  // selects the HIGHEST-SCORED block, not the LAST/FINAL one.
-  // This means a longer intermediate response can outrank the
-  // actual final answer.
+  // Phase 4 fixed the cascading intermediate-block bug by using
+  // position-first selection for Gemini. The LAST valid response
+  // node in DOM order wins, regardless of score.
   // =============================================
 
-  it('KNOWN BUG: intermediate block outranks final when it has higher score', () => {
+  it('FIXED (Phase 4): final block wins even when intermediate scores higher', () => {
     // Scenario: Gemini produces a long intermediate response, then a shorter final answer.
-    // The score-based ranking picks the intermediate because it has more text/Thai/bullets.
+    // Phase 4 position-first logic picks the final because it's the LAST valid node.
     const intermediateText = [
       'เทคโนโลยี AI กำลังเปลี่ยนโลกใบนี้อย่างที่ไม่เคยเกิดขึ้นมาก่อน',
       '',
@@ -161,15 +159,13 @@ describe('getLastAIMessage', () => {
 
     const result = getLastAIMessage('เขียนโพสต์เกี่ยวกับ AI', new Set(), 'gemini', document);
 
-    // DOCUMENTING ACTUAL BUG BEHAVIOR:
-    // The algorithm picks the intermediate (longer, more Thai, has bullets)
-    // instead of the final response block.
+    // Intermediate still scores higher...
     const intermediateScore = scoreAIResponseCandidate(intermediateText, 'gemini');
     const finalScore = scoreAIResponseCandidate(finalText, 'gemini');
     expect(intermediateScore).toBeGreaterThan(finalScore);
 
-    // The current code returns the intermediate, not the final
-    expect(result).toBe(intermediateText);
+    // ...but position-first selection picks the final (last in DOM)
+    expect(result).toBe(finalText);
   });
 
   it('CHARACTERIZATION: tool status word in raw text triggers -500 penalty, saving final block', () => {
@@ -235,9 +231,10 @@ describe('getLastAIMessage', () => {
     expect(result).toBe(finalText);
   });
 
-  it('CHARACTERIZATION: score ranking is the ONLY selection method (no positional/DOM-order logic)', () => {
-    // This documents that there is NO fallback to "pick the last element"
-    // It's purely score-based, which is the root cause of the intermediate bug
+  it('FIXED (Phase 4): position-first selects last valid node, not highest score', () => {
+    // Phase 4 position-first logic walks from the LAST DOM element backward.
+    // The last element "มีอะไรให้ช่วยอีกไหมครับ?" is valid (not suspicious,
+    // length >= 18), so it wins over the higher-scored middle block.
     const texts = [
       'สวัสดีครับ ยินดีต้อนรับสู่ Gemini วันนี้จะช่วยอะไรได้บ้างครับ',
       [
@@ -249,7 +246,7 @@ describe('getLastAIMessage', () => {
         '',
         '#Tech #AI #Innovation #Thailand',
       ].join('\n'),
-      'มีอะไรให้ช่วยอีกไหมครับ?',
+      'มีอะไรให้ช่วยอีกไหมครับ? สามารถถามคำถามอะไรก็ได้เลยนะครับ',
     ];
 
     const container = buildGeminiConversation(
@@ -259,8 +256,7 @@ describe('getLastAIMessage', () => {
 
     const result = getLastAIMessage('เขียนรายงานเทค', new Set(), 'gemini', document);
 
-    // The algorithm picks the HIGHEST SCORED response (index 1 = longest Thai + bullets)
-    // NOT the last DOM element (index 2 = "มีอะไรให้ช่วยอีกไหมครับ?")
-    expect(result).toContain('รายงานเทคโนโลยีประจำสัปดาห์');
+    // Position-first picks the LAST valid node (index 2)
+    expect(result).toContain('มีอะไรให้ช่วยอีกไหมครับ');
   });
 });
