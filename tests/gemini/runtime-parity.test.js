@@ -51,6 +51,12 @@ describe('structural parity: content_ai.js wiring markers', () => {
     expect(runtimeSource).toContain('function waitForVisiblePrompt(');
   });
 
+  it('contains send readiness helpers for Gemini send truth flow', () => {
+    expect(runtimeSource).toContain('function findSendReadyControl(');
+    expect(runtimeSource).toContain('function buildSendStateSnapshot(');
+    expect(runtimeSource).toContain('visible composer ของ ${aiProvider.label} มีข้อความแล้ว แต่ยังไม่พบ send-ready control');
+  });
+
   it('routes Gemini through selectGeminiResponse in getLastAIMessage', () => {
     // The runtime getLastAIMessage must call selectGeminiResponse for Gemini
     expect(runtimeSource).toMatch(/if\s*\(aiProvider\.key\s*===\s*'gemini'\)/);

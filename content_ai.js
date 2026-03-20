@@ -470,20 +470,29 @@
     // 5) Send Button Handler
     // =============================================
     async function clickSendButton(input) {
+        const beforeState = buildSendStateSnapshot(input);
+        updateStatus(`stage=send-ready controls=${beforeState.actionableCount}/${beforeState.visibleControlCount} stop=${beforeState.stopVisible ? 'yes' : 'no'}`);
+
         const candidates = collectSendButtons(input);
         for (const btn of candidates) {
             if (!btn || btn.disabled || !isVisible(btn)) continue;
             btn.focus?.();
             btn.click();
             await sleep(400);
-            if (await waitForSendStart(input, 1200)) return;
+            if (await waitForSendStart(input, 1200, beforeState)) return;
         }
 
-        pressEnter(input);
-        await sleep(500);
-        if (await waitForSendStart(input, 1500)) return;
+        if (beforeState.composerHasText) {
+            pressEnter(input);
+            await sleep(500);
+            if (await waitForSendStart(input, 1500, beforeState)) return;
+        }
 
-        throw new Error(`ไม่พบปุ่มส่งของ ${aiProvider.label}`);
+        if (!beforeState.actionableCount) {
+            throw new Error(`visible composer ของ ${aiProvider.label} มีข้อความแล้ว แต่ยังไม่พบ send-ready control`);
+        }
+
+        throw new Error(`visible composer ของ ${aiProvider.label} มีข้อความแล้ว แต่ send-start ไม่เกิดหลังพยายามกดส่ง`);
     }
 
     function collectSendButtons(input) {
@@ -493,52 +502,159 @@
             buttons.push(button);
         };
 
+        const ranked = collectSendControls(input)
+            .map(button => ({
+                button,
+                score: scoreSendButton(button, input)
+            }))
+            .filter(candidate => candidate.score > -1000)
+            .filter(Boolean)
+            .sort((a, b) => b.score - a.score);
+
+        ranked.forEach(candidate => pushButton(candidate.button));
+        return buttons;
+    }
+
+    function collectSendControls(input) {
+        const controls = [];
+        const pushControl = (button) => {
+            if (!button || controls.includes(button)) return;
+            controls.push(button);
+        };
+
         const form = input?.closest('form');
         if (form) {
-            Array.from(form.querySelectorAll('button')).forEach(pushButton);
+            Array.from(form.querySelectorAll('button')).forEach(pushControl);
         }
 
         const composerRoot = input?.closest('[class*="composer"], [class*="input"], [class*="chat"], [role="group"]') || input?.parentElement;
         if (composerRoot) {
-            Array.from(composerRoot.querySelectorAll('button')).forEach(pushButton);
+            Array.from(composerRoot.querySelectorAll('button')).forEach(pushControl);
         }
 
         const providerRoot = input?.closest('form, rich-textarea, .conversation-container, .chat-input-container, body');
         if (providerRoot) {
-            Array.from(providerRoot.querySelectorAll('button')).forEach(pushButton);
+            Array.from(providerRoot.querySelectorAll('button')).forEach(pushControl);
         }
 
         for (const selector of SEND_BUTTON_SELECTORS) {
-            const button = document.querySelector(selector);
-            pushButton(button);
+            document.querySelectorAll(selector).forEach(pushControl);
         }
 
-        return buttons
-            .filter(Boolean)
-            .sort((a, b) => scoreSendButton(b) - scoreSendButton(a));
+        return controls;
     }
 
-    function scoreSendButton(button) {
-        const text = `${button.getAttribute('aria-label') || ''} ${button.textContent || ''} ${button.innerHTML || ''}`.toLowerCase();
+    function getSendButtonDescriptor(button) {
+        return normalizePromptText(`${button?.getAttribute('aria-label') || ''} ${button?.getAttribute('title') || ''} ${button?.getAttribute('mattooltip') || ''} ${button?.textContent || ''} ${button?.innerHTML || ''}`).toLowerCase();
+    }
+
+    function isStopButton(button) {
+        if (!button) return false;
+
+        for (const selector of STOP_BUTTON_SELECTORS) {
+            if (matchesSelector(button, selector)) {
+                return true;
+            }
+        }
+
+        return /stop|หยุด|cancel generation|stop generating|stop response/i.test(getSendButtonDescriptor(button));
+    }
+
+    function scoreSendButton(button, input) {
+        if (!button || !isVisible(button) || isStopButton(button)) {
+            return -1000;
+        }
+
+        const ariaDisabled = button.getAttribute('aria-disabled');
+        if (button.disabled || ariaDisabled === 'true') {
+            return -1000;
+        }
+
+        const text = getSendButtonDescriptor(button);
+        if (/mic|microphone|voice|upload|attach|image|gallery|plus|menu/.test(text)) {
+            return -1000;
+        }
+
         let score = 0;
-        if (button.type === 'submit') score += 50;
-        if (/send|submit|ส่ง/.test(text)) score += 80;
-        if (/gemini|run|prompt/.test(text)) score += 30;
-        if (/arrow|up|paper-plane|rocket|submit/.test(text)) score += 40;
-        if (button.closest('message-actions, form, rich-textarea')) score += 20;
+        if (button.type === 'submit') score += 80;
+        if (/send|submit|ส่ง|run|arrow up|paper plane|rocket/.test(text)) score += 140;
+        if (/gemini|prompt|message/.test(text)) score += 25;
+        if (button.closest('message-actions, form, rich-textarea, [class*="composer"], [class*="input"]')) score += 40;
         if (button.querySelector('svg')) score += 10;
-        if (button.disabled) score -= 200;
+        if (button === document.activeElement) score += 15;
+
+        const inputForm = input?.closest('form');
+        const buttonForm = button.closest('form');
+        if (inputForm && buttonForm && inputForm === buttonForm) score += 100;
+
+        const inputRect = getElementRect(input);
+        const buttonRect = getElementRect(button);
+        if (inputRect && buttonRect) {
+            const deltaX = Math.abs((buttonRect.left + buttonRect.width / 2) - inputRect.right);
+            const deltaY = Math.abs((buttonRect.top + buttonRect.height / 2) - inputRect.bottom);
+            score += Math.max(0, 120 - Math.min(deltaX + deltaY, 120));
+        }
+
         return score;
     }
 
-    async function waitForSendStart(input, timeout = 5000) {
+    function findSendReadyControl(input) {
+        return collectSendButtons(input)[0] || null;
+    }
+
+    function buildSendStateSnapshot(input) {
+        const ranked = collectSendControls(input)
+            .map(button => ({
+                button,
+                score: scoreSendButton(button, input)
+            }))
+            .sort((a, b) => b.score - a.score);
+
+        const readyControl = ranked.find(candidate => candidate.score > -1000)?.button || null;
+        const composerText = normalizePromptText(getInputText(input));
+
+        return {
+            readyControl,
+            readyControlDescriptor: readyControl ? getSendButtonDescriptor(readyControl) : '',
+            visibleControlCount: ranked.filter(candidate => isVisible(candidate.button)).length,
+            actionableCount: ranked.filter(candidate => candidate.score > -1000).length,
+            stopVisible: STOP_BUTTON_SELECTORS.some(selector => {
+                const element = document.querySelector(selector);
+                return Boolean(element && isVisible(element));
+            }),
+            composerHasText: Boolean(composerText),
+            composerTextSample: composerText.slice(0, 48)
+        };
+    }
+
+    async function waitForSendStart(input, timeout = 5000, beforeState = null) {
+        const baselineState = beforeState || buildSendStateSnapshot(input);
         const startedAt = Date.now();
         while (Date.now() - startedAt < timeout) {
-            const stopBtn = queryAny(STOP_BUTTON_SELECTORS);
-            const currentText = getInputText(input);
-            if (stopBtn || !currentText.trim()) {
+            const currentState = buildSendStateSnapshot(input);
+            if (currentState.stopVisible) {
+                updateStatus('stage=send-start พบ stop control แล้ว');
                 return true;
             }
+
+            if (baselineState.composerHasText && !currentState.composerHasText) {
+                updateStatus('stage=send-start composer ว่างลงหลังส่ง');
+                return true;
+            }
+
+            if (baselineState.readyControl && currentState.readyControl && baselineState.readyControl === currentState.readyControl) {
+                const ariaDisabled = currentState.readyControl.getAttribute('aria-disabled');
+                if (currentState.readyControl.disabled || ariaDisabled === 'true') {
+                    updateStatus('stage=send-start send control ถูกปิดใช้งานแล้ว');
+                    return true;
+                }
+            }
+
+            if (baselineState.readyControl && baselineState.readyControl !== currentState.readyControl) {
+                updateStatus('stage=send-start send control เปลี่ยน state แล้ว');
+                return true;
+            }
+
             await sleep(200);
         }
         return false;
@@ -866,11 +982,29 @@
         element.dispatchEvent(new KeyboardEvent('keyup', init));
     }
 
+    function matchesSelector(element, selector) {
+        if (!element?.matches) return false;
+
+        try {
+            return element.matches(selector);
+        } catch {
+            return false;
+        }
+    }
+
     function isVisible(element) {
         if (!element) return false;
         const style = window.getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }
+
+    function getElementRect(element) {
+        if (!element || typeof element.getBoundingClientRect !== 'function') {
+            return null;
+        }
+
+        return element.getBoundingClientRect();
     }
 
     function placeCursorAtEnd(element) {
