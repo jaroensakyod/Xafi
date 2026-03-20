@@ -490,7 +490,19 @@
     // =============================================
     // 7) Extract Last AI Message
     // =============================================
+    // RUNTIME WIRING (v2 2026-03-20):
+    // - Gemini: position-first selection (last valid DOM node wins)
+    //   Aligned with lib/response-collector.js selectGeminiResponse()
+    // - Grok: legacy score-based ranking (frozen, do not change)
+    // - background.js contract: frozen, no changes
+    // =============================================
     function getLastAIMessage(promptText = '', baselineCandidates = new Set()) {
+        if (aiProvider.key === 'gemini') {
+            const elements = collectResponseElements();
+            return selectGeminiResponse(elements, promptText, baselineCandidates);
+        }
+
+        // Grok/other: legacy score-based ranking
         const candidates = collectResponseCandidates()
             .filter(text => !baselineCandidates.has(text))
             .filter(text => !isPromptEcho(text, promptText));
@@ -508,29 +520,58 @@
         return ranked[0]?.raw || null;
     }
 
-    function collectResponseCandidates() {
-        const texts = [];
+    function selectGeminiResponse(elements, promptText, baselineCandidates) {
+        const filtered = elements
+            .filter(el => !baselineCandidates.has(el.text))
+            .filter(el => !isPromptEcho(el.text, promptText));
+
+        if (!filtered.length) return null;
+
+        // Walk from newest (last in DOM) to oldest
+        for (let i = filtered.length - 1; i >= 0; i--) {
+            const candidate = filtered[i];
+            const clean = sanitizeAIResponseText(candidate.text);
+            if (clean && !isSuspiciousAIResponse(candidate.text)) {
+                return candidate.text;
+            }
+        }
+
+        // Fallback: all candidates suspicious — pick the best-scored one
+        const ranked = filtered
+            .map(el => ({ raw: el.text, score: scoreAIResponseCandidate(el.text) }))
+            .filter(el => el.score > -1000)
+            .sort((a, b) => b.score - a.score);
+
+        return ranked[0]?.raw || null;
+    }
+
+    function collectResponseElements() {
+        const seen = new Set();
+        const results = [];
+
+        const addElement = (element) => {
+            const text = (element.innerText || element.textContent || '').trim();
+            if (!text || seen.has(text)) return;
+            seen.add(text);
+            results.push({ text, index: results.length });
+        };
 
         if (aiProvider.key === 'gemini') {
-            document.querySelectorAll('message-content, model-response, .response-content, .markdown, .model-response-text').forEach((element) => {
-                const text = element.innerText?.trim();
-                if (text) texts.push(text);
-            });
+            document.querySelectorAll('message-content, model-response, .response-content, .markdown, .model-response-text').forEach(addElement);
         }
 
         for (const selector of RESPONSE_SELECTORS) {
-            document.querySelectorAll(selector).forEach((element) => {
-                const text = element.innerText?.trim();
-                if (text) texts.push(text);
-            });
+            document.querySelectorAll(selector).forEach(addElement);
         }
 
-        document.querySelectorAll('[class*="message"], [class*="Message"], .prose, [class*="markdown"], [class*="Markdown"]').forEach((element) => {
-            const text = element.innerText?.trim();
-            if (text) texts.push(text);
-        });
+        document.querySelectorAll('[class*="message"], [class*="Message"], .prose, [class*="markdown"], [class*="Markdown"]').forEach(addElement);
 
-        return Array.from(new Set(texts));
+        return results;
+    }
+
+    // collectResponseCandidates: flat text-only list (used for baseline capture)
+    function collectResponseCandidates() {
+        return collectResponseElements().map(el => el.text);
     }
 
     function isPromptEcho(candidateText, promptText) {
