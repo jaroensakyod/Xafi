@@ -128,28 +128,10 @@
 
         updateStatus('stage=page-ready กำลังรอ composer ที่พร้อมใช้งาน...');
 
-        // 2.1) รอ visible composer/input ที่พร้อมจริง
-        const inputEl = await waitForComposerReady(20000);
-        if (!inputEl) {
-            throw new Error(`ไม่พบ visible composer บน ${aiProvider.label} - หน้าอาจยังไม่พร้อมหรือ DOM เปลี่ยนแปลง`);
-        }
-
-        updateStatus('stage=composer-found พบ visible composer แล้ว');
-
-        // 2.2) เคลียร์ข้อความเก่า (ถ้ามี)
-        await clearInput(inputEl);
-        await sleep(randomBetween(500, 1000));
-
         const responseBaseline = new Set(collectResponseCandidates());
 
-        // 2.3) ใส่ Prompt ด้วยวิธีที่เหมาะกับแต่ละ provider
-        updateStatus('กำลังพิมพ์ Prompt...');
-        await fillPromptInput(inputEl, prompt, settings);
-
-        const visiblePromptInput = await waitForVisiblePrompt(prompt, 3000);
-        if (!visiblePromptInput) {
-            throw new Error(`ใส่ prompt ลง ${aiProvider.label} visible composer ไม่สำเร็จ`);
-        }
+        // 2.1-2.3) รอ stable composer แล้วพิมพ์ prompt พร้อม retry ถ้า cold-open remount/reset
+        const visiblePromptInput = await fillPromptIntoStableComposer(prompt, settings);
 
         updateStatus('stage=prompt-visible ข้อความอยู่ใน visible composer แล้ว');
 
@@ -351,12 +333,57 @@
 
     async function waitForComposerReady(timeout = 15000) {
         const startedAt = Date.now();
+        let lastInput = null;
+        let stableCount = 0;
+
         while (Date.now() - startedAt < timeout) {
             const input = findVisibleComposerInput();
             if (input) {
-                return input;
+                if (input === lastInput) {
+                    stableCount += 1;
+                } else {
+                    lastInput = input;
+                    stableCount = 1;
+                }
+
+                if (stableCount >= 3) {
+                    return input;
+                }
+            } else {
+                lastInput = null;
+                stableCount = 0;
             }
+
             await sleep(200);
+        }
+
+        return null;
+    }
+
+    async function waitForReplacementComposer(previousInput, timeout = 2500) {
+        const startedAt = Date.now();
+        let lastInput = null;
+        let stableCount = 0;
+
+        while (Date.now() - startedAt < timeout) {
+            const input = findVisibleComposerInput();
+            if (input && input !== previousInput) {
+                if (input === lastInput) {
+                    stableCount += 1;
+                } else {
+                    lastInput = input;
+                    stableCount = 1;
+                }
+
+                if (stableCount >= 2) {
+                    return input;
+                }
+            } else {
+                lastInput = null;
+                stableCount = 0;
+            }
+
+            await sleep(150);
         }
 
         return null;
@@ -373,6 +400,90 @@
         }
 
         return null;
+    }
+
+    async function waitForStableVisiblePrompt(promptText, timeout = 2500) {
+        const startedAt = Date.now();
+        let lastInput = null;
+        let stableCount = 0;
+
+        while (Date.now() - startedAt < timeout) {
+            const input = findPromptVisibleInput(promptText);
+            if (input) {
+                if (input === lastInput) {
+                    stableCount += 1;
+                } else {
+                    lastInput = input;
+                    stableCount = 1;
+                }
+
+                if (stableCount >= 3) {
+                    return input;
+                }
+            } else {
+                lastInput = null;
+                stableCount = 0;
+            }
+
+            await sleep(150);
+        }
+
+        return null;
+    }
+
+    async function fillPromptIntoStableComposer(prompt, settings = {}, maxAttempts = 2) {
+        let lastFailureStage = 'composer-not-ready';
+        let previousComposer = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            const inputEl = attempt === 1
+                ? await waitForComposerReady(20000)
+                : (await waitForReplacementComposer(previousComposer, 3000)) || await waitForComposerReady(5000);
+
+            if (!inputEl) {
+                lastFailureStage = 'composer-not-ready';
+                break;
+            }
+
+            previousComposer = inputEl;
+            updateStatus(`stage=composer-found พบ visible composer แล้ว (attempt=${attempt})`);
+            updateStatus(`stage=composer-stable composer พร้อมใช้งานแล้ว (attempt=${attempt})`);
+
+            await clearInput(inputEl);
+            await sleep(randomBetween(500, 1000));
+
+            updateStatus(attempt === 1
+                ? 'กำลังพิมพ์ Prompt...'
+                : `stage=retry-fill กำลังพิมพ์ Prompt ใหม่หลัง reacquire (attempt=${attempt})`);
+
+            await fillPromptInput(inputEl, prompt, settings);
+
+            const visiblePromptInput = await waitForStableVisiblePrompt(prompt, 2500);
+            if (visiblePromptInput) {
+                return visiblePromptInput;
+            }
+
+            const replacementComposer = await waitForReplacementComposer(inputEl, 2500);
+            if (replacementComposer) {
+                lastFailureStage = 'composer-remounted-after-fill';
+                previousComposer = replacementComposer;
+                updateStatus(`stage=reacquire composer ถูก reset/remount หลัง fill (attempt=${attempt})`);
+                continue;
+            }
+
+            lastFailureStage = 'composer-not-stable-after-fill';
+            updateStatus(`stage=reacquire ยังไม่พบ prompt ใน visible composer หลัง fill (attempt=${attempt})`);
+        }
+
+        if (lastFailureStage === 'composer-remounted-after-fill') {
+            throw new Error(`ใส่ prompt ลง ${aiProvider.label} visible composer ไม่สำเร็จ - composer ถูกรีเซ็ตหลัง cold-open`);
+        }
+
+        if (lastFailureStage === 'composer-not-stable-after-fill') {
+            throw new Error(`ใส่ prompt ลง ${aiProvider.label} visible composer ไม่สำเร็จ - composer ยังไม่ stable หลัง fill`);
+        }
+
+        throw new Error(`ไม่พบ visible composer บน ${aiProvider.label} - หน้าอาจยังไม่พร้อมหรือ DOM เปลี่ยนแปลง`);
     }
 
     function findVisibleComposerInput(root = document) {

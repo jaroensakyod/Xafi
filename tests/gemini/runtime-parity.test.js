@@ -47,8 +47,11 @@ describe('structural parity: content_ai.js wiring markers', () => {
 
   it('contains composer readiness helpers for Gemini cold-open flow', () => {
     expect(runtimeSource).toContain('function waitForComposerReady(');
+    expect(runtimeSource).toContain('function waitForReplacementComposer(');
     expect(runtimeSource).toContain('function findVisibleComposerInput(');
     expect(runtimeSource).toContain('function waitForVisiblePrompt(');
+    expect(runtimeSource).toContain('function waitForStableVisiblePrompt(');
+    expect(runtimeSource).toContain('function fillPromptIntoStableComposer(');
   });
 
   it('contains send readiness helpers for Gemini send truth flow', () => {
@@ -75,8 +78,9 @@ describe('structural parity: content_ai.js wiring markers', () => {
   });
 
   it('waits for composer readiness before using the Gemini input', () => {
-    expect(runtimeSource).toContain('const inputEl = await waitForComposerReady(20000);');
-    expect(runtimeSource).toContain('const visiblePromptInput = await waitForVisiblePrompt(prompt, 3000);');
+    expect(runtimeSource).toContain('const visiblePromptInput = await fillPromptIntoStableComposer(prompt, settings);');
+    expect(runtimeSource).toContain('composer ถูกรีเซ็ตหลัง cold-open');
+    expect(runtimeSource).toContain('composer ยังไม่ stable หลัง fill');
   });
 });
 

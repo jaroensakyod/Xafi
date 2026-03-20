@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   collectComposerCandidates,
   composerContainsText,
+  findReplacementComposer,
   findPromptVisibleInput,
   findVisibleComposerInput,
   isWritableComposerInput,
@@ -131,5 +132,52 @@ describe('composer readiness helpers', () => {
     expect(isWritableComposerInput(disabled)).toBe(false);
     expect(isWritableComposerInput(readOnly)).toBe(false);
     expect(isWritableComposerInput(writable)).toBe(true);
+  });
+
+  it('finds replacement composer after cold-open remount', () => {
+    const first = document.createElement('div');
+    first.setAttribute('contenteditable', 'true');
+    first.setAttribute('role', 'textbox');
+    first.setAttribute('aria-label', 'Ask Gemini');
+    markVisible(first);
+    document.body.appendChild(first);
+
+    expect(findReplacementComposer(first, document)).toBeNull();
+
+    first.remove();
+
+    const second = document.createElement('div');
+    second.setAttribute('contenteditable', 'true');
+    second.setAttribute('role', 'textbox');
+    second.setAttribute('aria-label', 'Ask Gemini');
+    markVisible(second);
+    document.body.appendChild(second);
+
+    expect(findReplacementComposer(first, document)).toBe(second);
+  });
+
+  it('proxies cold-open fail then warm retry pass after composer remount', () => {
+    const prompt = 'เขียนโพสต์เกี่ยวกับ AI ให้หน่อยนะ';
+
+    const first = document.createElement('div');
+    first.setAttribute('contenteditable', 'true');
+    first.setAttribute('role', 'textbox');
+    first.setAttribute('aria-label', 'Ask Gemini');
+    first.textContent = prompt;
+    markVisible(first);
+    document.body.appendChild(first);
+
+    first.remove();
+
+    const second = document.createElement('div');
+    second.setAttribute('contenteditable', 'true');
+    second.setAttribute('role', 'textbox');
+    second.setAttribute('aria-label', 'Ask Gemini');
+    second.textContent = prompt;
+    markVisible(second);
+    document.body.appendChild(second);
+
+    expect(findReplacementComposer(first, document)).toBe(second);
+    expect(findPromptVisibleInput(prompt, document)).toBe(second);
   });
 });

@@ -24,7 +24,10 @@ stage สำคัญ:
 
 - `stage=page-ready`
 - `stage=composer-found`
+- `stage=composer-stable`
 - `stage=prompt-visible`
+- `stage=reacquire`
+- `stage=retry-fill`
 - `stage=send-ready controls=...`
 - `stage=send-start ...`
 
@@ -47,6 +50,7 @@ stage สำคัญ:
 ### Failure Signals ที่ต้องจด
 
 - visible composer ยังว่าง แต่ log ไปถึง `send-ready`
+- เห็น `stage=reacquire` หรือ `stage=retry-fill` แล้วสุดท้ายยังไม่เกิด `prompt-visible`
 - มีข้อความใน composer แล้ว แต่ error เป็น `ยังไม่พบ send-ready control`
 - มีข้อความใน composer แล้ว และมีการกดส่ง แต่ error เป็น `send-start ไม่เกิดหลังพยายามกดส่ง`
 - popup ถูกปิดเร็วเกินไปจนเก็บ evidence ไม่ทัน
@@ -75,6 +79,7 @@ stage สำคัญ:
 
 - item แรก fail แต่ item สอง pass แบบไม่มี evidence ชี้ stage ต่างกัน
 - item แรก prompt ไม่เข้า visible composer แต่ item สองเข้า
+- item แรกต้องใช้ `reacquire/retry-fill` แต่ item สองไม่ต้องใช้เลย ให้ note stage difference ไว้ด้วย
 - item แรกเจอ `send-ready control ยังไม่พร้อม` ซ้ำ ขณะที่ item สองกดส่งได้บนแท็บเดิม
 
 ## Decision Matrix
@@ -103,6 +108,7 @@ stage สำคัญ:
 - Case: `A` หรือ `B`
 - Result: `pass` | `iterate` | `rollback`
 - Last stage log:
+- Retry stage seen:
 - Visible composer state:
 - Send control state:
 - Queue final state:
