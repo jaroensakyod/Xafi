@@ -78,4 +78,28 @@ describe('Sidepanel Bootstrap Characterization', () => {
             expect(sidepanelSource, `Missing data loader call: ${call}`).toContain(call);
         }
     });
+
+    it('loadSettings uses null-safe DOM access for all settings elements', () => {
+        // Extract loadSettings function body
+        const loadSettingsMatch = sidepanelSource.match(
+            /async function loadSettings\(\)\s*\{[\s\S]*?^\s{4}\}/m
+        );
+        expect(loadSettingsMatch, 'loadSettings function not found').toBeTruthy();
+        const body = loadSettingsMatch[0];
+
+        // All direct $('...').value or $('...').checked assignments must use
+        // null-safe access or the helper functions (setVal/setChecked)
+        const unsafeDomAssignments = body.match(/\$\([^)]+\)\.(value|checked)\s*=/g);
+        expect(
+            unsafeDomAssignments,
+            `loadSettings must not use direct $().value = ... assignments (found: ${unsafeDomAssignments})`
+        ).toBeNull();
+    });
+
+    it('data loaders and settings are wrapped in guarded boot slices', () => {
+        // Verify try-catch wrapping exists around data loaders
+        expect(sidepanelSource).toContain('[Xafi] Data loader init failed');
+        expect(sidepanelSource).toContain('[Xafi] Settings binding failed');
+        expect(sidepanelSource).toContain('[Xafi] Action buttons binding failed');
+    });
 });

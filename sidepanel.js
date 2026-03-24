@@ -443,27 +443,37 @@
 
     async function loadSettings() {
         const res = await sendMessage({ type: 'GET_SETTINGS' });
-        if (res?.success && res.data) {
-            aiProvider = res.data.aiProvider || 'grok';
-            $('#aiProvider').value = aiProvider;
+        if (!res?.success || !res.data) return;
+
+        try {
+            const s = res.data;
+            aiProvider = s.aiProvider || 'grok';
+            const aiProviderEl = $('#aiProvider');
+            if (aiProviderEl) aiProviderEl.value = aiProvider;
             updateAiProviderUi(aiProvider);
-            $('#minViews').value = res.data.minViews || 500000;
-            $('#typingSpeedMin').value = res.data.typingSpeedMin || 30;
-            $('#typingSpeedMax').value = res.data.typingSpeedMax || 150;
-            $('#pauseEveryChars').value = res.data.pauseEveryChars || 40;
-            $('#pauseMin').value = res.data.pauseMin || 300;
-            $('#pauseMax').value = res.data.pauseMax || 800;
-            $('#promptMode').value = res.data.promptMode || 'soft-sell';
-            $('#scrollPreset').value = res.data.scrollPreset || 'medium';
-            $('#manualAssist').checked = Boolean(res.data.manualAssist);
-            $('#pauseOnFound').checked = Boolean(res.data.pauseOnFound);
-            $('#pauseOnFoundCount').value = res.data.pauseOnFoundCount || 1;
-            $('#checkpointEverySteps').value = res.data.checkpointEverySteps || 6;
-            $('#sessionLimit').value = res.data.sessionLimit || 15;
-            $('#dailyLimit').value = res.data.dailyLimit || 60;
-            $('#autoQuoteMinMinutes').value = res.data.autoQuoteMinMinutes || 2;
-            $('#autoQuoteMaxMinutes').value = res.data.autoQuoteMaxMinutes || 5;
-            $('#promptTemplate').value = res.data.promptTemplate || '';
+
+            const setVal = (sel, val) => { const el = $(sel); if (el) el.value = val; };
+            const setChecked = (sel, val) => { const el = $(sel); if (el) el.checked = Boolean(val); };
+
+            setVal('#minViews', s.minViews || 500000);
+            setVal('#typingSpeedMin', s.typingSpeedMin || 30);
+            setVal('#typingSpeedMax', s.typingSpeedMax || 150);
+            setVal('#pauseEveryChars', s.pauseEveryChars || 40);
+            setVal('#pauseMin', s.pauseMin || 300);
+            setVal('#pauseMax', s.pauseMax || 800);
+            setVal('#promptMode', s.promptMode || 'soft-sell');
+            setVal('#scrollPreset', s.scrollPreset || 'medium');
+            setChecked('#manualAssist', s.manualAssist);
+            setChecked('#pauseOnFound', s.pauseOnFound);
+            setVal('#pauseOnFoundCount', s.pauseOnFoundCount || 1);
+            setVal('#checkpointEverySteps', s.checkpointEverySteps || 6);
+            setVal('#sessionLimit', s.sessionLimit || 15);
+            setVal('#dailyLimit', s.dailyLimit || 60);
+            setVal('#autoQuoteMinMinutes', s.autoQuoteMinMinutes || 2);
+            setVal('#autoQuoteMaxMinutes', s.autoQuoteMaxMinutes || 5);
+            setVal('#promptTemplate', s.promptTemplate || '');
+        } catch (err) {
+            console.error('[Xafi] loadSettings hydration failed:', err);
         }
     }
 
