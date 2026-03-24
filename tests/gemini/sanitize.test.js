@@ -26,6 +26,10 @@ describe('isToolStatusLine', () => {
     expect(isToolStatusLine('Used tools')).toBe(true);
     expect(isToolStatusLine('Gemini said')).toBe(true);
     expect(isToolStatusLine('Grok said')).toBe(true);
+    expect(isToolStatusLine('Gemini บอกว่า')).toBe(true);
+    expect(isToolStatusLine('Gemini ตอบว่า')).toBe(true);
+    expect(isToolStatusLine('คำตอบจาก Gemini')).toBe(true);
+    expect(isToolStatusLine('นี่คือโพสต์')).toBe(true);
     expect(isToolStatusLine('Reasoned for 5 seconds')).toBe(true);
     expect(isToolStatusLine('Assistant')).toBe(true);
   });
@@ -84,6 +88,18 @@ describe('sanitizeAIResponseText', () => {
     const input = 'Gemini said Here is your post';
     const result = sanitizeAIResponseText(input);
     expect(result).toBe('Here is your post');
+  });
+
+  it('strips Thai Gemini wrapper prefixes and keeps the real body', () => {
+    expect(sanitizeAIResponseText('Gemini บอกว่า\nนี่คือคำตอบจริงที่พร้อมใช้')).toBe('นี่คือคำตอบจริงที่พร้อมใช้');
+    expect(sanitizeAIResponseText('Gemini ตอบว่า: นี่คือคำตอบจริงที่พร้อมใช้')).toBe('นี่คือคำตอบจริงที่พร้อมใช้');
+    expect(sanitizeAIResponseText('คำตอบจาก Gemini\nนี่คือคำตอบจริงที่พร้อมใช้')).toBe('นี่คือคำตอบจริงที่พร้อมใช้');
+  });
+
+  it('strips generic Thai wrapper lead-ins but preserves genuine Thai openings', () => {
+    expect(sanitizeAIResponseText('นี่คือโพสต์:\nประเด็นนี้คนยังมองข้ามกันอยู่')).toBe('ประเด็นนี้คนยังมองข้ามกันอยู่');
+    expect(sanitizeAIResponseText('นี่แหละประเด็นที่คนมองข้ามกันอยู่')).toBe('นี่แหละประเด็นที่คนมองข้ามกันอยู่');
+    expect(sanitizeAIResponseText('นี่คือโพสต์เกี่ยวกับเทคโนโลยี AI ที่น่าสนใจ')).toBe('นี่คือโพสต์เกี่ยวกับเทคโนโลยี AI ที่น่าสนใจ');
   });
 
   it('returns empty for Google AI Studio disclaimer text', () => {
