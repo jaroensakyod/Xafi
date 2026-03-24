@@ -132,8 +132,6 @@ behavior ที่ harden แล้ว:
 - reject stale response
 - strip ข้อความ wrapper เช่น `Gemini said`
 - ใช้ `productName`/`productLink` ต่อ item แทนการอิง global state อย่างเดียว
-- prompt runtime contract ถูกแยกชัดว่า `promptMode` คุมโทน ส่วน `promptTemplate` อยู่กับ operator ได้โดยไม่โดน preset ทับเอง
-- final post จะพยายามย่อแบบรักษา 4 บรรทัดก่อน และจะไม่ padding ให้ครบ 280 หรือเติม `...` ตอน save
 
 ### Auto Quote
 

@@ -5,15 +5,9 @@ import vm from 'node:vm';
 const BACKGROUND_SOURCE = readFileSync(resolve(process.cwd(), 'background.js'), 'utf8');
 
 const FUNCTION_END_MARKERS = {
-  normalizeSettings: 'function normalizePromptMode(',
   normalizePromptMode: 'function normalizeAiProvider(',
   sanitizeSourceText: 'function buildPrompt(',
   buildPrompt: 'function buildFinalPostText(',
-  buildFinalPostText: 'function debugDraftSave(',
-  resolvePromptTemplateUpdate: 'async function ensureSettings(',
-  getPromptTemplateForMode: 'function isBuiltInPromptTemplate(',
-  isBuiltInPromptTemplate: 'function getPromptTemplateSource(',
-  getPromptTemplateSource: 'function resolvePromptTemplateUpdate(',
   getBodyCharacterBudget: 'function trimToCharLimit(',
   getCharCount: 'function debugDraftSave(',
   isAiWrapperOnlyLine: 'function stripAiWrapperLeadIns(',
