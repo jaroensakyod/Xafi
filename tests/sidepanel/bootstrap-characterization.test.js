@@ -49,6 +49,21 @@ describe('Sidepanel Bootstrap Characterization', () => {
         }
     });
 
+    it('operator-critical DOM bindings use null-safe access', () => {
+        const lines = sidepanelSource.split('\n');
+        const criticalIds = ['saveSettings', 'clearDrafts', 'clearFound'];
+
+        for (const id of criticalIds) {
+            const bindingLines = lines.filter(l =>
+                l.includes(`'#${id}'`) && l.includes('addEventListener')
+            );
+            expect(bindingLines.length, `#${id} must have at least one binding`).toBeGreaterThan(0);
+            for (const line of bindingLines) {
+                expect(line, `#${id} binding must use ?.addEventListener`).toMatch(/\?\.\s*addEventListener/);
+            }
+        }
+    });
+
     it('bootstrap order: data loaders are called', () => {
         const loaders = [
             'loadDrafts()',

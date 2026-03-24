@@ -402,15 +402,19 @@
     }
 
     // =============================================
-    // 2) Load Data on Open
+    // 2) Load Data on Open (guarded boot slice)
     // =============================================
-    loadDrafts();
-    loadResults();
-    loadViralPosts();
-    loadProcessQueue();
-    loadGoogleTrends();
-    loadSettings();
-    loadCampaign();
+    try {
+        loadDrafts();
+        loadResults();
+        loadViralPosts();
+        loadProcessQueue();
+        loadGoogleTrends();
+        loadSettings();
+        loadCampaign();
+    } catch (err) {
+        console.error('[Xafi] Data loader init failed:', err);
+    }
 
     async function loadDrafts() {
         const res = await sendMessage({ type: 'GET_DRAFTS' });
@@ -782,9 +786,10 @@
     }
 
     // =============================================
-    // 6) Settings
+    // 6) Settings (guarded boot slice)
     // =============================================
-    $('#saveSettings').addEventListener('click', async () => {
+    try {
+    $('#saveSettings')?.addEventListener('click', async () => {
         const settings = {
             aiProvider: $('#aiProvider').value || 'grok',
             minViews: parseInt($('#minViews').value) || 500000,
@@ -821,10 +826,14 @@
 
         setTimeout(() => msg.classList.add('hidden'), 3000);
     });
+    } catch (err) {
+        console.error('[Xafi] Settings binding failed:', err);
+    }
 
     // =============================================
-    // 7) Action Buttons
+    // 7) Action Buttons (guarded boot slice)
     // =============================================
+    try {
 
     // Batch Create AI
     $('#batchCreateAiBtn')?.addEventListener('click', async () => {
@@ -873,14 +882,14 @@
         await loadProcessQueue();
     });
 
-    $('#clearDrafts').addEventListener('click', async () => {
+    $('#clearDrafts')?.addEventListener('click', async () => {
         if (confirm('ลบ Draft ทั้งหมด?')) {
             await sendMessage({ type: 'CLEAR_ALL_DRAFTS' });
             loadDrafts();
         }
     });
 
-    $('#clearFound').addEventListener('click', async () => {
+    $('#clearFound')?.addEventListener('click', async () => {
         if (confirm('ลบโพสต์ Viral ที่พบทั้งหมด?')) {
             await sendMessage({ type: 'CLEAR_ALL_VIRAL' });
             loadViralPosts();
@@ -907,9 +916,12 @@
         await sendMessage({ type: 'SET_TRENDS_COUNTRY', data: trendsCountry });
         await loadGoogleTrends();
     });
+    } catch (err) {
+        console.error('[Xafi] Action buttons binding failed:', err);
+    }
 
     // =============================================
-    // 8) Real-time Status Updates (จาก background)
+    // 8) Real-time Status Updates — CRITICAL, must always bind
     // =============================================
     chrome.runtime.onMessage.addListener((message) => {
         if (message.type === 'STATUS_UPDATE') {
