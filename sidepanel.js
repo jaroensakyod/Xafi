@@ -46,7 +46,6 @@
     const progressSteps = $('#progressSteps');
     const progressFound = $('#progressFound');
     const progressPauseReason = $('#progressPauseReason');
-    const HASHTAG_PREFIX = '#';
     const AFFILIATE_PRODUCT_OFFER_URL = 'https://affiliate.shopee.co.th/offer/product_offer';
     const FULL_AUTO_SOURCE = 'full-auto';
 
@@ -89,7 +88,7 @@
 
             if (autoScoutQueryInput) autoScoutQueryInput.value = query;
 
-            if (nextEnabled && (!query || query === HASHTAG_PREFIX)) {
+            if (nextEnabled && !query) {
                 alert('กรอกคำค้นก่อนเปิด Auto Scout');
                 autoScoutQueryInput?.focus();
                 return;
@@ -329,12 +328,6 @@
             autoScoutQueryInput.value = normalized;
         }
         autoScoutQuery = normalized;
-    });
-
-    autoScoutQueryInput?.addEventListener('focus', () => {
-        if (!autoScoutQueryInput.value.trim()) {
-            autoScoutQueryInput.value = HASHTAG_PREFIX;
-        }
     });
 
     productLinkInput?.addEventListener('change', async () => {
@@ -1016,14 +1009,11 @@
     }
 
     function normalizeHashtagQuery(value) {
-        const cleaned = String(value || '').replace(/^#+\s*/, '').trimStart();
-        return `${HASHTAG_PREFIX}${cleaned}`;
+        return String(value || '').trim();
     }
 
     function normalizeCampaignTopic(value) {
-        const cleaned = String(value || '').trim();
-        if (!cleaned) return HASHTAG_PREFIX;
-        return normalizeHashtagQuery(cleaned);
+        return String(value || '').trim();
     }
 
     function renderDraftStatusBadge(draft) {
@@ -1209,7 +1199,7 @@
                         <button class="topic-remove btn-icon" data-index="${i}" title="\u0e25\u0e1a">\u2715</button>
                     </div>
                 </div>
-                <input type="text" class="topic-field topic-query" placeholder="\u0e2b\u0e31\u0e27\u0e02\u0e49\u0e2d \u0e40\u0e0a\u0e48\u0e19 #aitools" value="${escapeAttr(normalizeCampaignTopic(t.topic || ''))}" data-index="${i}" />
+                <input type="text" class="topic-field topic-query" placeholder="\u0e2b\u0e31\u0e27\u0e02\u0e49\u0e2d \u0e40\u0e0a\u0e48\u0e19 aitools \u0e2b\u0e23\u0e37\u0e2d bitcoin" value="${escapeAttr(normalizeCampaignTopic(t.topic || ''))}" data-index="${i}" />
                 <input type="text" class="topic-field topic-product" placeholder="\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32" value="${escapeAttr(t.productName || '')}" data-index="${i}" />
                 <input type="url" class="topic-field topic-link" placeholder="\u0e25\u0e34\u0e07\u0e01\u0e4c\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32" value="${escapeAttr(t.productLink || '')}" data-index="${i}" />
                 <button class="btn-small affiliate-shortcut-btn topic-affiliate-btn" type="button" data-index="${i}">เชื่อมต่อลิงก์ Shopee Affiliate</button>
@@ -1237,15 +1227,6 @@
             field.addEventListener('change', () => debouncedSaveCampaign());
         });
         topicListEl.querySelectorAll('.topic-query').forEach(field => {
-            field.addEventListener('input', () => {
-                const selectionStart = field.selectionStart;
-                const normalized = normalizeCampaignTopic(field.value);
-                if (field.value !== normalized) {
-                    field.value = normalized;
-                    const nextPos = Math.max(1, selectionStart ?? normalized.length);
-                    field.setSelectionRange(nextPos, nextPos);
-                }
-            });
             field.addEventListener('blur', () => {
                 field.value = normalizeCampaignTopic(field.value);
                 debouncedSaveCampaign();
@@ -1281,7 +1262,7 @@
 
     function addTopicRow() {
         const topics = collectTopicsFromUI();
-        topics.push({ id: '', topic: HASHTAG_PREFIX, productName: '', productLink: '', targetPostCount: 3 });
+        topics.push({ id: '', topic: '', productName: '', productLink: '', targetPostCount: 3 });
         renderTopics(topics);
         debouncedSaveCampaign();
     }
