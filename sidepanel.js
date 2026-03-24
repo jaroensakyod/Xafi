@@ -800,41 +800,50 @@
     // =============================================
     try {
     $('#saveSettings')?.addEventListener('click', async () => {
+        const getVal = (sel, fallback) => $(sel)?.value ?? fallback;
+        const getInt = (sel, fallback) => parseInt(getVal(sel, fallback)) || fallback;
+        const getChecked = (sel) => $(sel)?.checked ?? false;
+
         const settings = {
-            aiProvider: $('#aiProvider').value || 'grok',
-            minViews: parseInt($('#minViews').value) || 500000,
-            typingSpeedMin: parseInt($('#typingSpeedMin').value) || 30,
-            typingSpeedMax: parseInt($('#typingSpeedMax').value) || 150,
-            pauseEveryChars: parseInt($('#pauseEveryChars').value) || 40,
-            pauseMin: parseInt($('#pauseMin').value) || 300,
-            pauseMax: parseInt($('#pauseMax').value) || 800,
-            promptMode: $('#promptMode').value || 'soft-sell',
-            scrollPreset: $('#scrollPreset').value,
-            manualAssist: $('#manualAssist').checked,
-            pauseOnFound: $('#pauseOnFound').checked,
-            pauseOnFoundCount: Math.max(1, parseInt($('#pauseOnFoundCount').value, 10) || 1),
-            checkpointEverySteps: parseInt($('#checkpointEverySteps').value) || 6,
-            sessionLimit: parseInt($('#sessionLimit').value) || 15,
-            dailyLimit: parseInt($('#dailyLimit').value) || 60,
-            autoQuoteMinMinutes: parseInt($('#autoQuoteMinMinutes').value) || 2,
-            autoQuoteMaxMinutes: parseInt($('#autoQuoteMaxMinutes').value) || 5,
-            promptTemplate: $('#promptTemplate').value
+            aiProvider: getVal('#aiProvider', 'grok'),
+            minViews: getInt('#minViews', 500000),
+            typingSpeedMin: getInt('#typingSpeedMin', 30),
+            typingSpeedMax: getInt('#typingSpeedMax', 150),
+            pauseEveryChars: getInt('#pauseEveryChars', 40),
+            pauseMin: getInt('#pauseMin', 300),
+            pauseMax: getInt('#pauseMax', 800),
+            promptMode: getVal('#promptMode', 'soft-sell'),
+            scrollPreset: getVal('#scrollPreset', 'medium'),
+            manualAssist: getChecked('#manualAssist'),
+            pauseOnFound: getChecked('#pauseOnFound'),
+            pauseOnFoundCount: Math.max(1, getInt('#pauseOnFoundCount', 1)),
+            checkpointEverySteps: getInt('#checkpointEverySteps', 6),
+            sessionLimit: getInt('#sessionLimit', 15),
+            dailyLimit: getInt('#dailyLimit', 60),
+            autoQuoteMinMinutes: getInt('#autoQuoteMinMinutes', 2),
+            autoQuoteMaxMinutes: getInt('#autoQuoteMaxMinutes', 5),
+            promptTemplate: getVal('#promptTemplate', ''),
         };
 
         const res = await sendMessage({ type: 'SAVE_SETTINGS', data: settings });
         const msg = $('#settingsMsg');
-        msg.classList.remove('hidden');
 
-        if (res?.success) {
+        if (msg) {
+            msg.classList.remove('hidden');
+
+            if (res?.success) {
+                updateAiProviderUi(settings.aiProvider);
+                msg.textContent = '✅ บันทึกเรียบร้อย!';
+                msg.className = 'settings-msg msg-success';
+            } else {
+                msg.textContent = '❌ บันทึกไม่สำเร็จ';
+                msg.className = 'settings-msg msg-error';
+            }
+
+            setTimeout(() => msg.classList.add('hidden'), 3000);
+        } else if (res?.success) {
             updateAiProviderUi(settings.aiProvider);
-            msg.textContent = '✅ บันทึกเรียบร้อย!';
-            msg.className = 'settings-msg msg-success';
-        } else {
-            msg.textContent = '❌ บันทึกไม่สำเร็จ';
-            msg.className = 'settings-msg msg-error';
         }
-
-        setTimeout(() => msg.classList.add('hidden'), 3000);
     });
     } catch (err) {
         console.error('[Xafi] Settings binding failed:', err);

@@ -60,3 +60,25 @@ describe('Sidepanel-Background Settings Contract', () => {
         }
     });
 });
+
+describe('Sidepanel Save Settings Safety', () => {
+    const sidepanelSource = readFileSync(resolve(__dirname, '../../sidepanel.js'), 'utf-8');
+
+    it('save-settings handler uses null-safe DOM access', () => {
+        // Should not have any direct $().value or $().checked without ?.
+        // The handler uses getVal/getInt/getChecked helpers
+        expect(sidepanelSource).toContain("const getVal = (sel, fallback) => $(sel)?.value ?? fallback");
+        expect(sidepanelSource).toContain("const getChecked = (sel) => $(sel)?.checked ?? false");
+    });
+
+    it('settings message element access is null-safe', () => {
+        // settingsMsg display should be guarded
+        expect(sidepanelSource).toContain("if (msg) {");
+    });
+
+    it('prompt UX elements referenced in save-settings have fallback defaults', () => {
+        // Prompt-related fields must have explicit fallbacks
+        expect(sidepanelSource).toContain("getVal('#promptMode', 'soft-sell')");
+        expect(sidepanelSource).toContain("getVal('#promptTemplate', '')");
+    });
+});
