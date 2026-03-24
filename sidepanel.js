@@ -3,6 +3,46 @@
 // =============================================
 // UI หลักสำหรับจัดการ Drafts, ดูโพสต์ Viral, และตั้งค่า
 // =============================================
+//
+// ============ Bootstrap Order & Safety Contract ============
+// This IIFE initializes sequentially. A synchronous throw at
+// any point aborts all subsequent bindings in the same run.
+//
+// BOOT ORDER:
+//  1. DOM references           (const $ selectors)
+//  2. State variables          (let isAutoScout, aiProvider, etc.)
+//  3. Auto Scout init          (async: GET_AUTO_SCOUT_STATE)
+//  4. Control listeners        (btnAutoScout, btnScoutStep, forceStop)
+//  5. Auto Quote init          (async: GET_AUTO_QUOTE_STATE)
+//  6. Tab navigation           (querySelectorAll .tab)
+//  7. Data loaders             (async: loadDrafts, loadResults, …)
+//  8. Settings save            (#saveSettings click)
+//  9. Action buttons           (clearQueue, clearDrafts, clearFound, clearResults)
+// 10. chrome.runtime.onMessage (STATUS_UPDATE handler)       ← CRITICAL
+// 11. chrome.storage.onChanged (live data refresh)           ← CRITICAL
+// 12. Campaign controls        (campaign start/stop/reset)
+//
+// OPERATOR-CRITICAL CONTROLS (must survive partial boot):
+//  - Auto Scout toggle         (btnAutoScout)
+//  - Force Stop AI             (forceStopAiBtn, forceStopAiFromStatusBtn)
+//  - Clear Queue               (#clearQueueBtn)
+//  - Clear Results             (clearResultsBtn)
+//  - Clear Drafts              (#clearDrafts)
+//  - Status bar updates        (chrome.runtime.onMessage → updateStatusUI)
+//  - Storage refresh           (chrome.storage.onChanged)
+//
+// KNOWN CHOKE POINT (forensic from commit 8ab64dd):
+//  Functions inserted inside another function's scope become
+//  invisible to top-level callers. If loadSettings or save-settings
+//  calls a function that doesn't exist at IIFE scope, the resulting
+//  ReferenceError aborts bootstrap, leaving controls bound AFTER
+//  that point (items 8-12) unattached — panel looks frozen.
+//
+// SAFETY INVARIANTS:
+//  - All function declarations must be at IIFE top-level scope.
+//  - All DOM bindings for operator-critical controls must use ?. access.
+//  - Items 10-11 (critical observers) must always bind.
+// ============================================================
 
 (function () {
     'use strict';
