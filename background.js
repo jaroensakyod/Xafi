@@ -224,6 +224,8 @@ function normalizeSettings(settings = {}, options = {}) {
         merged.promptTemplateVersion = PROMPT_TEMPLATE_VERSION;
     }
 
+    merged.promptTemplateSource = getPromptTemplateSource(merged.promptTemplate);
+
     return merged;
 }
 
@@ -266,6 +268,33 @@ function isBuiltInPromptTemplate(template) {
         || normalized === V4_DEFAULT_PROMPT_TEMPLATE.trim()
         || normalized === DEFAULT_PROMPT_TEMPLATE.trim()
         || normalized === HOT_TAKE_PROMPT_TEMPLATE.trim();
+}
+
+function getPromptTemplateSource(template) {
+    return isBuiltInPromptTemplate(template) ? 'built-in' : 'custom';
+}
+
+function resolvePromptTemplateUpdate(previousSettings = {}, newSettings = {}) {
+    const nextPromptMode = normalizePromptMode(newSettings?.promptMode ?? previousSettings?.promptMode);
+    const previousPromptTemplate = String(previousSettings?.promptTemplate || '');
+    const nextPromptTemplate = typeof newSettings?.promptTemplate === 'string'
+        ? newSettings.promptTemplate
+        : previousPromptTemplate;
+    const promptChangedManually = nextPromptTemplate.trim() !== previousPromptTemplate.trim();
+    const shouldSwapPresetTemplate = Boolean(newSettings?.applyPromptPreset)
+        || (!promptChangedManually
+            && isBuiltInPromptTemplate(previousSettings.promptTemplate)
+            && normalizePromptMode(previousSettings.promptMode) !== nextPromptMode);
+    const promptTemplate = shouldSwapPresetTemplate
+        ? getPromptTemplateForMode(nextPromptMode)
+        : nextPromptTemplate;
+
+    return {
+        promptMode: nextPromptMode,
+        promptTemplate,
+        promptTemplateSource: getPromptTemplateSource(promptTemplate),
+        promptTemplateVersion: PROMPT_TEMPLATE_VERSION
+    };
 }
 
 async function ensureSettings() {
@@ -482,6 +511,20 @@ async function handleMessage(message, sender) {
 
         case 'START_PROCESS_QUEUE':
             return await startProcessQueueFromStorage();
+
+        case 'GET_PROMPT_PRESET': {
+            const promptMode = normalizePromptMode(message.data?.promptMode);
+            const promptTemplate = getPromptTemplateForMode(promptMode);
+            return {
+                success: true,
+                data: {
+                    promptMode,
+                    promptTemplate,
+                    promptTemplateSource: 'built-in',
+                    promptTemplateVersion: PROMPT_TEMPLATE_VERSION
+                }
+            };
+        }
 
         case 'GET_SETTINGS':
             return await getSettings();
@@ -1027,6 +1070,9 @@ async function onAIResponseReady(data) {
         rawResponse,
         pendingPrompt?.sourcePost?.productLink || ''
     );
+    const validationError = isFinalPostReady(finalText, pendingPrompt?.sourcePost?.productLink || '')
+        ? ''
+        : 'ข้อความนี้ยังเกินเพดานหรือโครงสร้างยังไม่ครบ 4 บรรทัด ระบบจึงกันไว้ให้ตรวจเองก่อนโพสต์';
 
     debugDraftSave('before-save-draft', {
         rawResponse,
@@ -1047,7 +1093,8 @@ async function onAIResponseReady(data) {
         productLink: pendingPrompt?.sourcePost?.productLink || '',
         generatedText: rawResponse,
         finalText,
-        status: 'ready',
+        status: validationError ? 'needs_review' : 'ready',
+        validationError,
         createdAt: new Date().toISOString(),
         campaignId: pendingPrompt?.sourcePost?.campaignId || '',
         topicId: pendingPrompt?.sourcePost?.topicId || ''
@@ -1062,6 +1109,7 @@ async function onAIResponseReady(data) {
         productLink: draft.productLink,
         generatedText: draft.generatedText,
         finalText: draft.finalText,
+        validationError: draft.validationError || '',
         copied: Boolean(data.copied),
         createdAt: draft.createdAt,
         campaignId: draft.campaignId || '',
@@ -1147,19 +1195,29 @@ async function updateDraft(data) {
     const idx = drafts.findIndex(d => d.id === data.id);
     if (idx >= 0) {
         const existingDraft = drafts[idx];
+        const productUrl = existingDraft.productLink || data.productLink || '';
         const nextGeneratedText = typeof data.generatedText === 'string'
             ? data.generatedText
             : (typeof data.finalText === 'string' ? data.finalText : existingDraft.generatedText);
         const nextFinalText = buildFinalPostText(
             typeof data.finalText === 'string' ? data.finalText : nextGeneratedText,
-            existingDraft.productLink || data.productLink || ''
+            productUrl
         );
+        const contentChanged = typeof data.generatedText === 'string' || typeof data.finalText === 'string';
+        const validationError = contentChanged && !isFinalPostReady(nextFinalText, productUrl)
+            ? 'ข้อความนี้ยังเกินเพดานหรือโครงสร้างยังไม่ครบ 4 บรรทัด ระบบจึงกันไว้ให้ตรวจเองก่อนโพสต์'
+            : '';
+        const nextStatus = typeof data.status === 'string' && data.status
+            ? data.status
+            : (contentChanged ? (validationError ? 'needs_review' : 'ready') : existingDraft.status);
 
         drafts[idx] = {
             ...existingDraft,
             ...data,
             generatedText: nextGeneratedText,
-            finalText: nextFinalText
+            finalText: nextFinalText,
+            status: nextStatus,
+            validationError: typeof data.validationError === 'string' ? data.validationError : validationError
         };
 
         const resultIdx = results.findIndex(item => item.id === data.id);
@@ -1167,7 +1225,8 @@ async function updateDraft(data) {
             results[resultIdx] = {
                 ...results[resultIdx],
                 generatedText: nextGeneratedText,
-                finalText: nextFinalText
+                finalText: nextFinalText,
+                validationError: typeof data.validationError === 'string' ? data.validationError : validationError
             };
         }
 
@@ -1279,8 +1338,13 @@ async function postToX(data) {
     const draft = drafts.find(item => item.id === data.id);
     const postText = draft?.finalText || data.text || '';
     const sourceUrl = draft?.sourceUrl || data.sourceUrl || '';
+    const productUrl = draft?.productLink || data.productLink || '';
     const isAutoQuoteRun = Boolean(data.autoQuoteRun);
     const nextStatus = isAutoQuoteRun ? 'auto_quote_posting' : 'posting';
+
+    if (!isFinalPostReady(postText, productUrl)) {
+        throw new Error('Draft นี้ยังไม่พร้อมโพสต์: ความยาวหรือโครงสร้างยังไม่ผ่านเกณฑ์ 4 บรรทัด');
+    }
 
     await updateDraft({
         id: data.id,
@@ -2272,20 +2336,11 @@ async function getSettings() {
 
 async function saveSettings(newSettings) {
     const previousSettings = await ensureSettings();
-    const nextPromptMode = normalizePromptMode(newSettings?.promptMode);
-    const nextPromptTemplate = typeof newSettings?.promptTemplate === 'string'
-        ? newSettings.promptTemplate
-        : previousSettings.promptTemplate;
-    const promptChangedManually = nextPromptTemplate.trim() !== String(previousSettings.promptTemplate || '').trim();
-    const shouldSwapPresetTemplate = !promptChangedManually
-        && isBuiltInPromptTemplate(previousSettings.promptTemplate)
-        && normalizePromptMode(previousSettings.promptMode) !== nextPromptMode;
+    const promptUpdate = resolvePromptTemplateUpdate(previousSettings, newSettings);
 
     const settings = normalizeSettings({
         ...newSettings,
-        promptMode: nextPromptMode,
-        promptTemplate: shouldSwapPresetTemplate ? getPromptTemplateForMode(nextPromptMode) : nextPromptTemplate,
-        promptTemplateVersion: PROMPT_TEMPLATE_VERSION
+        ...promptUpdate
     });
     await chrome.storage.local.set({ settings });
 
@@ -2618,19 +2673,49 @@ function buildPrompt(sourcePost, settings, product) {
         .filter(Boolean)
         .join('\n');
 
-    let template = settings?.promptTemplate || DEFAULT_SETTINGS.promptTemplate;
-    template = template.replace('{CONTENT}', cleanContent || sourcePost?.text || '');
-    template = template.replace('{PRODUCT_URL}', productUrl || '(ไม่มี)');
-    template = template.replace('{PRODUCT_CONTEXT}', dynamicContext);
-
-    if (!template.includes(sourceContentContext)) template += `\n${sourceContentContext}`;
-    if (!template.includes(outputOnlyContext)) template += `\n${outputOnlyContext}`;
-    if (!template.includes(bulletContext)) template += `\n${bulletContext}`;
-    if (!template.includes(modeContext)) template += `\n${modeContext}`;
-    if (!template.includes(lengthContext)) template += `\n${lengthContext}`;
-    if (productContext && !template.includes(productContext)) template += `\n${productContext}`;
+    const promptContractSections = buildPromptContract(dynamicContext);
+    const template = applyPromptTemplateContract(
+        settings?.promptTemplate || DEFAULT_SETTINGS.promptTemplate,
+        {
+            content: cleanContent || sourcePost?.text || '',
+            productUrl: productUrl || '(ไม่มี)',
+            promptContract: dynamicContext
+        },
+        promptContractSections
+    );
 
     return template.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function buildPromptContract(promptContractText) {
+    return String(promptContractText || '')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+}
+
+function replacePromptTemplateToken(template, token, value) {
+    return String(template || '').split(token).join(value);
+}
+
+function applyPromptTemplateContract(template, replacements, promptContractSections) {
+    const content = replacements?.content || '';
+    const productUrl = replacements?.productUrl || '(ไม่มี)';
+    const promptContract = replacements?.promptContract || '';
+    let nextTemplate = String(template || DEFAULT_SETTINGS.promptTemplate);
+
+    nextTemplate = replacePromptTemplateToken(nextTemplate, '{CONTENT}', content);
+    nextTemplate = replacePromptTemplateToken(nextTemplate, '{PRODUCT_URL}', productUrl);
+    nextTemplate = replacePromptTemplateToken(nextTemplate, '{PRODUCT_CONTEXT}', promptContract);
+    nextTemplate = replacePromptTemplateToken(nextTemplate, '{PROMPT_CONTRACT}', promptContract);
+
+    promptContractSections.forEach((section) => {
+        if (!nextTemplate.includes(section)) {
+            nextTemplate += `\n${section}`;
+        }
+    });
+
+    return nextTemplate;
 }
 
 function buildFinalPostText(text, productUrl) {
@@ -2638,21 +2723,191 @@ function buildFinalPostText(text, productUrl) {
     const trailingParts = [cleanProductUrl].filter(Boolean);
     const bodyBudget = getBodyCharacterBudget(cleanProductUrl);
     const normalizedBody = enforceFourLinePostStructure(normalizeDraftStructure(stripAiWrapperText(text)));
-    let finalBody = trimToCharLimit(normalizedBody, bodyBudget);
-    let finalText = joinPostSegments(finalBody, trailingParts);
+    const compactedBody = compactStructuredPostToLimit(normalizedBody, bodyBudget);
+    const finalBody = compactedBody || normalizedBody;
+    return joinPostSegments(finalBody, trailingParts);
+}
 
-    const missingChars = MAX_POST_LENGTH - getCharCount(finalText);
-    if (missingChars > 0 && finalBody) {
-        finalBody = `${finalBody}${' '.repeat(missingChars)}`;
-        finalText = joinPostSegments(finalBody, trailingParts);
+function isFinalPostReady(finalText, productUrl) {
+    const normalizedFinalText = normalizeWhitespace(finalText);
+    if (!normalizedFinalText) return false;
+    if (getCharCount(normalizedFinalText) > MAX_POST_LENGTH) return false;
+
+    const bodyText = extractFinalBodyText(normalizedFinalText, productUrl);
+    const lines = bodyText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    return lines.length === 4
+        && !/^-\s+/.test(lines[0])
+        && /^-\s+/.test(lines[1])
+        && /^-\s+/.test(lines[2])
+        && !/^-\s+/.test(lines[3]);
+}
+
+function extractFinalBodyText(finalText, productUrl) {
+    const normalizedFinalText = normalizeWhitespace(finalText);
+    const cleanProductUrl = String(productUrl || '').trim();
+    if (!cleanProductUrl) return normalizedFinalText;
+
+    const lines = normalizedFinalText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    if (lines[lines.length - 1] === cleanProductUrl) {
+        return lines.slice(0, -1).join('\n').trim();
     }
 
-    if (getCharCount(finalText) > MAX_POST_LENGTH) {
-        finalBody = trimToCharLimit(finalBody, Math.max(0, bodyBudget - (getCharCount(finalText) - MAX_POST_LENGTH)));
-        finalText = joinPostSegments(finalBody, trailingParts);
+    return normalizedFinalText;
+}
+
+function compactStructuredPostToLimit(text, limit) {
+    if (limit <= 0) return '';
+
+    const normalized = enforceFourLinePostStructure(normalizeWhitespace(text));
+    if (!normalized) return '';
+    if (getCharCount(normalized) <= limit) return normalized;
+
+    const baseLines = parseStructuredPostLines(normalized);
+    const attempts = [
+        baseLines,
+        compactStructuredLineSet(baseLines, ['opener', 'closer']),
+        compactStructuredLineSet(compactStructuredLineSet(baseLines, ['opener', 'closer']), ['bulletOne', 'bulletTwo']),
+        compactStructuredLineSet(baseLines, ['opener', 'closer', 'bulletOne', 'bulletTwo'])
+    ];
+
+    for (const attempt of attempts) {
+        const formatted = formatStructuredPostLines(attempt);
+        if (formatted && getCharCount(formatted) <= limit) {
+            return formatted;
+        }
     }
 
-    return finalText;
+    return reduceStructuredPostToLimit(attempts[attempts.length - 1], limit);
+}
+
+function parseStructuredPostLines(text) {
+    const lines = enforceFourLinePostStructure(text)
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    return {
+        opener: stripBulletPrefix(lines[0] || ''),
+        bulletOne: stripBulletPrefix(lines[1] || lines[0] || ''),
+        bulletTwo: stripBulletPrefix(lines[2] || lines[1] || lines[0] || ''),
+        closer: stripBulletPrefix(lines[3] || lines[2] || lines[0] || '')
+    };
+}
+
+function formatStructuredPostLines(lines) {
+    const opener = stripBulletPrefix(lines?.opener || '');
+    const bulletOne = stripBulletPrefix(lines?.bulletOne || opener);
+    const bulletTwo = stripBulletPrefix(lines?.bulletTwo || bulletOne || opener);
+    const closer = stripBulletPrefix(lines?.closer || bulletTwo || opener);
+
+    return [
+        opener,
+        ensureBulletLine(bulletOne),
+        ensureBulletLine(bulletTwo),
+        closer
+    ].join('\n').trim();
+}
+
+function compactStructuredLineSet(lines, keys) {
+    return keys.reduce((current, key) => ({
+        ...current,
+        [key]: compactLineToSingleSegment(current[key])
+    }), { ...lines });
+}
+
+function compactLineToSingleSegment(line) {
+    const cleanLine = stripBulletPrefix(line);
+    const sentenceSegments = splitLineForCompaction(cleanLine, 'sentence');
+    if (sentenceSegments.length > 1) {
+        return sentenceSegments[0];
+    }
+
+    const clauseSegments = splitLineForCompaction(cleanLine, 'clause');
+    if (clauseSegments.length > 1) {
+        return clauseSegments[0];
+    }
+
+    return cleanLine;
+}
+
+function splitLineForCompaction(line, mode = 'clause') {
+    const cleanLine = stripBulletPrefix(line);
+    const pattern = mode === 'sentence'
+        ? /(?<=[.!?！？])\s+|\n+/u
+        : /\s*[,:;|]\s+|\s+(?:แต่|และ|หรือ|เพราะ|ซึ่ง|โดย|จาก|แล้ว|พร้อม|รวมถึง|เพื่อ|ถ้า|เมื่อ|จน|กับ|ในขณะที่)\s+/u;
+
+    return cleanLine
+        .split(pattern)
+        .map(segment => segment.trim())
+        .filter(Boolean);
+}
+
+function reduceStructuredPostToLimit(lines, limit) {
+    let current = { ...lines };
+    const blockedKeys = new Set();
+
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+        const formatted = formatStructuredPostLines(current);
+        if (formatted && getCharCount(formatted) <= limit) {
+            return formatted;
+        }
+
+        const key = pickLongestStructuredLineKey(current, blockedKeys);
+        if (!key) {
+            return '';
+        }
+
+        const nextValue = dropTrailingClauseOrWord(current[key]);
+        if (!nextValue || nextValue === current[key]) {
+            blockedKeys.add(key);
+            continue;
+        }
+
+        current = { ...current, [key]: nextValue };
+        blockedKeys.clear();
+    }
+
+    return '';
+}
+
+function pickLongestStructuredLineKey(lines, blockedKeys = new Set()) {
+    return ['bulletOne', 'bulletTwo', 'opener', 'closer']
+        .filter(key => !blockedKeys.has(key))
+        .sort((left, right) => getCharCount(lines[right] || '') - getCharCount(lines[left] || ''))[0] || '';
+}
+
+function dropTrailingClauseOrWord(line) {
+    const cleanLine = stripBulletPrefix(line);
+    const clauseSegments = splitLineForCompaction(cleanLine, 'clause');
+    if (clauseSegments.length > 1) {
+        const nextClause = clauseSegments.slice(0, -1).join(' ').trim();
+        if (nextClause && nextClause !== cleanLine) {
+            return nextClause;
+        }
+    }
+
+    const sentenceSegments = splitLineForCompaction(cleanLine, 'sentence');
+    if (sentenceSegments.length > 1) {
+        const nextSentence = sentenceSegments.slice(0, -1).join(' ').trim();
+        if (nextSentence && nextSentence !== cleanLine) {
+            return nextSentence;
+        }
+    }
+
+    const words = cleanLine.split(/\s+/).filter(Boolean);
+    if (words.length > 2) {
+        return words.slice(0, -1).join(' ');
+    }
+
+    return cleanLine;
 }
 
 function getBodyCharacterBudget(productUrl) {

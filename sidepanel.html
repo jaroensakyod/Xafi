@@ -375,8 +375,12 @@
                 <label>Prompt Template</label>
                 <textarea id="promptTemplate" rows="10"
                     placeholder="ใส่ Prompt ที่ต้องการ...ใช้ {CONTENT} เป็นตัวแทนเนื้อหาต้นทาง"></textarea>
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                    <button id="applyPromptPreset" class="btn-small" type="button">ใช้ preset ตาม mode</button>
+                </div>
+                <span id="promptTemplateStatus" class="input-hint"></span>
                 <span class="input-hint">ระบบจะใช้ Prompt Mode เป็น style layer เพิ่มอีกชั้น
-                    พร้อมคุมโครงสร้าง 4 บรรทัดและเพดานความยาวรวมลิงก์สินค้าไม่เกิน 280 ตัวอักษร</span>
+                    พร้อมคุมโครงสร้าง 4 บรรทัดและเพดานความยาวรวมลิงก์สินค้าไม่เกิน 280 ตัวอักษร โดยไม่บังคับให้ครบ 280 เป๊ะ</span>
             </div>
 
             <div class="form-group">

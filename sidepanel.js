@@ -36,6 +36,10 @@
     const toggleTrendsPanelBtn = $('#toggleTrendsPanel');
     const trendListWrap = $('#trendListWrap');
     const trendList = $('#trendList');
+    const promptModeSelect = $('#promptMode');
+    const promptTemplateInput = $('#promptTemplate');
+    const promptTemplateStatus = $('#promptTemplateStatus');
+    const applyPromptPresetBtn = $('#applyPromptPreset');
     const resultsPreviewList = $('#resultsPreviewList');
     const clearResultsBtn = $('#clearResultsBtn');
     const aiProviderStatus = $('#aiProviderStatus');
@@ -61,6 +65,8 @@
     let autoScoutProgress = null;
     let isTrendsCollapsed = false;
     let selectedViralIds = new Set();
+    let savedPromptTemplate = '';
+    let savedPromptTemplateSource = 'built-in';
 
     sendMessage({ type: 'GET_AUTO_SCOUT_STATE' }).then(res => {
         if (res?.success) {
@@ -138,6 +144,25 @@
             aiProviderStatus.style.background = aiProvider === 'gemini' ? '#1d4ed8' : '#0f766e';
         }
 
+
+    function getPromptModeLabel(mode) {
+        return mode === 'hot-take' ? 'Hot Take' : 'Soft Sell';
+    }
+
+    function refreshPromptTemplateStatus() {
+        if (!promptTemplateStatus || !promptTemplateInput || !promptModeSelect) return;
+
+        const promptMode = promptModeSelect.value || 'soft-sell';
+        const currentTemplate = String(promptTemplateInput.value || '').trim();
+        const isDirty = currentTemplate !== String(savedPromptTemplate || '').trim();
+        const sourceLabel = isDirty
+            ? 'Custom (ยังไม่บันทึก)'
+            : (savedPromptTemplateSource === 'built-in'
+                ? `Preset ${getPromptModeLabel(promptMode)}`
+                : 'Custom');
+
+        promptTemplateStatus.textContent = `${sourceLabel} • runtime จะคุม 4 บรรทัด, ไม่มี hashtag/link ใน body, และต้องอยู่ในเพดาน 280 ตัวอักษรรวมลิงก์`;
+    }
         if (progressAiProvider) {
             progressAiProvider.textContent = label;
         }
@@ -420,6 +445,9 @@
             $('#autoQuoteMinMinutes').value = res.data.autoQuoteMinMinutes || 2;
             $('#autoQuoteMaxMinutes').value = res.data.autoQuoteMaxMinutes || 5;
             $('#promptTemplate').value = res.data.promptTemplate || '';
+            savedPromptTemplate = res.data.promptTemplate || '';
+            savedPromptTemplateSource = res.data.promptTemplateSource || 'custom';
+            refreshPromptTemplateStatus();
         }
     }
 
@@ -452,6 +480,7 @@
         ${draft.sourceUrl ? `<div class="card-source">📌 จาก: <a href="${escapeAttr(draft.sourceUrl)}" target="_blank">${escapeHtml(draft.sourceAuthor || 'โพสต์ต้นทาง')}</a></div>` : ''}
 
         <div class="card-content draft-text" contenteditable="false">${escapeHtml(draft.finalText || draft.generatedText)}</div>
+            ${draft.validationError ? `<div class="card-source" style="color:#fcd34d;">เช็กก่อนโพสต์: ${escapeHtml(draft.validationError)}</div>` : ''}
                 ${draft.postError ? `<div class="card-source" style="color:#fca5a5;">เหตุผล: ${escapeHtml(draft.postError)}</div>` : ''}
 
         <div class="card-actions">
@@ -772,6 +801,13 @@
 
         if (res?.success) {
             updateAiProviderUi(settings.aiProvider);
+            if (res.data) {
+                if (promptModeSelect) promptModeSelect.value = res.data.promptMode || settings.promptMode;
+                if (promptTemplateInput) promptTemplateInput.value = res.data.promptTemplate || settings.promptTemplate;
+                savedPromptTemplate = res.data.promptTemplate || settings.promptTemplate;
+                savedPromptTemplateSource = res.data.promptTemplateSource || 'custom';
+                refreshPromptTemplateStatus();
+            }
             msg.textContent = '✅ บันทึกเรียบร้อย!';
             msg.className = 'settings-msg msg-success';
         } else {
@@ -780,6 +816,20 @@
         }
 
         setTimeout(() => msg.classList.add('hidden'), 3000);
+    });
+
+    promptModeSelect?.addEventListener('change', refreshPromptTemplateStatus);
+    promptTemplateInput?.addEventListener('input', refreshPromptTemplateStatus);
+    applyPromptPresetBtn?.addEventListener('click', async () => {
+        const promptMode = promptModeSelect?.value || 'soft-sell';
+        const confirmed = confirm(`แทนที่ prompt ปัจจุบันด้วย preset ${getPromptModeLabel(promptMode)}?`);
+        if (!confirmed) return;
+
+        const res = await sendMessage({ type: 'GET_PROMPT_PRESET', data: { promptMode } });
+        if (!res?.success || !promptTemplateInput) return;
+
+        promptTemplateInput.value = res.data?.promptTemplate || '';
+        refreshPromptTemplateStatus();
     });
 
     // =============================================
@@ -1031,6 +1081,8 @@
                 return { label: '🚀 กำลังโพสต์', className: 'badge-ready', title: 'กำลังเปิด X และกดโพสต์ให้อัตโนมัติ' };
             case 'posted':
                 return { label: '✅ โพสต์แล้ว', className: 'badge-posted', title: draft.postedAt ? `โพสต์เมื่อ ${formatTime(draft.postedAt)}` : 'โพสต์เสร็จแล้ว' };
+            case 'needs_review':
+                return { label: '⚠️ ต้องตรวจ/ย่อ', className: 'badge-quote-missing', title: draft.validationError || 'ข้อความยังไม่ผ่านเพดานหรือโครงสร้าง 4 บรรทัด' };
             case 'post_error':
                 return { label: '❌ โพสต์ไม่สำเร็จ', className: 'badge-quote-missing', title: draft.postError || 'โปรดลองใหม่อีกครั้ง' };
             case 'pending_post':
@@ -1041,24 +1093,42 @@
     }
 
     function renderDraftReadinessBadge(draft) {
-        const badge = getDraftReadiness(draft.finalText || draft.generatedText || '', draft.sourceUrl || '');
+        const badge = getDraftReadiness(draft.finalText || draft.generatedText || '', draft.sourceUrl || '', draft.productLink || '');
         return `<span class="draft-readiness-badge ${badge.className}">${badge.label}</span>`;
     }
 
-    function getDraftReadiness(text, sourceUrl) {
+    function getDraftReadiness(text, sourceUrl, productLink) {
         const hasQuoteSource = Boolean(String(sourceUrl || '').trim());
-        const hasBullet = /^-\s+/m.test(String(text || ''));
-        const isExactLength = getCharCount(text) === 280;
+        const normalizedText = String(text || '').trim();
+        const withinLimit = getCharCount(normalizedText) <= 280;
+        const bodyLines = extractDraftBodyLines(normalizedText, productLink);
+        const hasFourLineStructure = bodyLines.length === 4
+            && /^-\s+/.test(bodyLines[1] || '')
+            && /^-\s+/.test(bodyLines[2] || '');
 
-        if (hasQuoteSource && hasBullet && isExactLength) {
-            return { label: 'Quote-ready / 280 chars', className: 'badge-quote-ready' };
+        if (hasQuoteSource && hasFourLineStructure && withinLimit) {
+            return { label: 'Quote-ready / within limit', className: 'badge-quote-ready' };
         }
 
         const missing = [];
         if (!hasQuoteSource) missing.push('quote');
-        if (!hasBullet) missing.push('bullet');
-        if (!isExactLength) missing.push('280');
+        if (!hasFourLineStructure) missing.push('4-line');
+        if (!withinLimit) missing.push('limit');
         return { label: `ต้องเช็ก: ${missing.join(', ')}`, className: 'badge-quote-missing' };
+    }
+
+    function extractDraftBodyLines(text, productLink) {
+        const lines = String(text || '')
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean);
+        const cleanProductLink = String(productLink || '').trim();
+
+        if (cleanProductLink && lines[lines.length - 1] === cleanProductLink) {
+            return lines.slice(0, -1);
+        }
+
+        return lines;
     }
 
     // =============================================
