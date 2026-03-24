@@ -7,9 +7,8 @@
 // =============================================
 
 // --- ค่าคงที่ ---
-const PROMPT_TEMPLATE_VERSION = 7;
-const LEGACY_FIXED_CHAR_PROMPT_PATTERN = /(?:247|280)\s*ตัวอักษร(?:\s*(?:พอดี|เป๊ะ))?/;
-const PROMPT_BODY_BUFFER = 24;
+const PROMPT_TEMPLATE_VERSION = 6;
+const LEGACY_FIXED_CHAR_PROMPT_PATTERN = /247\s*ตัวอักษร/;
 
 const LEGACY_DEFAULT_PROMPT_TEMPLATE = `สรุปเนื้อหาด้านล่างให้เป็นโพสต์ X (ทวิตเตอร์) สไตล์เพื่อนเล่าแบบชิล ๆ ภาษาพูดธรรมชาติ ห้ามทางการ ห้ามสุภาพเกิน
 
@@ -2564,46 +2563,11 @@ function sanitizeSourceText(text) {
         .trim();
 }
 
-function formatPromptLengthTarget(limit) {
-    if (limit <= 0) return '';
-
-    const comfortableMax = Math.max(1, limit - PROMPT_BODY_BUFFER);
-    const comfortableMin = Math.max(1, comfortableMax - 32);
-
-    return comfortableMin >= comfortableMax
-        ? `${comfortableMax}`
-        : `${comfortableMin}-${comfortableMax}`;
-}
-
-function buildPromptLengthContext(productUrl) {
-    const cleanProductUrl = String(productUrl || '').trim();
-    const bodyBudget = getBodyCharacterBudget(cleanProductUrl);
-    const targetRange = formatPromptLengthTarget(bodyBudget || MAX_POST_LENGTH);
-
-    if (cleanProductUrl) {
-        return [
-            '- ระบบจะต่อท้ายข้อความด้วยลิงก์สินค้าอัตโนมัติ และจะใช้โพสต์ต้นทางทำ Quote แยกต่างหาก',
-            `- ข้อความที่ AI สร้างเองต้องไม่เกิน ${bodyBudget} ตัวอักษร เพื่อเผื่อพื้นที่ให้ลิงก์สินค้า`,
-            targetRange
-                ? `- ถ้าเขียนได้สั้นและครบประเด็น ให้เล็งช่วงประมาณ ${targetRange} ตัวอักษร โดยไม่ต้องฝืนให้ครบจำนวน`
-                : '- ถ้าพื้นที่น้อย ให้ตอบสั้นที่สุดเท่าที่ครบประเด็นโดยไม่ต้องฝืนให้ครบจำนวน',
-            `- เมื่อนำข้อความนี้ไปรวมกับลิงก์สินค้า ${cleanProductUrl} แล้ว ความยาวรวมต้องไม่เกิน ${MAX_POST_LENGTH} ตัวอักษร`
-        ].join('\n');
-    }
-
-    return [
-        '- ถ้าไม่มีลิงก์สินค้า ระบบจะใช้ข้อความนี้เป็นโพสต์สุดท้ายโดยตรง',
-        `- ข้อความสุดท้ายทั้งหมดต้องไม่เกิน ${MAX_POST_LENGTH} ตัวอักษร`,
-        targetRange
-            ? `- ถ้าเขียนได้สั้นและครบประเด็น ให้เล็งช่วงประมาณ ${targetRange} ตัวอักษร โดยไม่ต้องฝืนให้ครบจำนวน`
-            : '- ถ้าพื้นที่น้อย ให้ตอบสั้นที่สุดเท่าที่ครบประเด็นโดยไม่ต้องฝืนให้ครบจำนวน'
-    ].join('\n');
-}
-
 function buildPrompt(sourcePost, settings, product) {
     const promptMode = normalizePromptMode(settings?.promptMode);
     const cleanContent = sanitizeSourceText(sourcePost?.text || '');
     const productUrl = String(sourcePost?.productLink || productLink || '').trim();
+    const charBudget = getBodyCharacterBudget(productUrl);
     const sourceContentContext = '- ใช้เนื้อหาจากทั้งโพสต์ได้ รวมถึงข้อความหลัง hashtag แต่ไม่ต้องคัดลอก hashtag หรือลิงก์จากต้นทางมาใช้ตรงๆ';
     const outputOnlyContext = '- ตอบกลับเฉพาะข้อความโพสต์สุดท้ายเพียงอย่างเดียว ห้ามมีคำอธิบาย ห้ามมี markdown ห้ามมี code block และห้ามมีข้อความสถานะ เช่น Executed code';
     const bulletContext = '- ต้องออกมาเป็น 4 บรรทัดเท่านั้น โดยบรรทัด 2 และ 3 ต้องขึ้นต้นด้วย -';
@@ -2613,8 +2577,12 @@ function buildPrompt(sourcePost, settings, product) {
     const productContext = product
         ? `- ถ้ามีจังหวะที่เหมาะ ค่อยเชื่อมโยงกับสินค้า/บริการนี้เพียง 1 จุดแบบเนียนๆ เหมือนพูดแทรกจากประสบการณ์ตรง ห้าม hard sell ห้ามภาษาโฆษณา: ${product}`
         : '';
-    const lengthContext = buildPromptLengthContext(productUrl);
-    const dynamicContext = [sourceContentContext, outputOnlyContext, bulletContext, modeContext, productContext, lengthContext]
+    const exactLengthContext = [
+        '- ระบบจะต่อท้ายข้อความด้วยลิงก์สินค้าอัตโนมัติ และจะใช้โพสต์ต้นทางทำ Quote แยกต่างหาก',
+        `- ข้อความที่ AI สร้างได้เองต้องยาว ${charBudget} ตัวอักษรพอดี`,
+        `- เมื่อนำข้อความนี้ไปรวมกับลิงก์สินค้า ${productUrl || '(ไม่มี)'} รวมทั้งทุกตัวอักษร ช่องว่าง เครื่องหมาย ?, -, การขึ้นบรรทัดใหม่ และลิงก์ทั้งหมด ความยาวรวมต้องเท่ากับ ${MAX_POST_LENGTH} ตัวอักษรพอดี`
+    ].join('\n');
+    const dynamicContext = [sourceContentContext, outputOnlyContext, bulletContext, modeContext, productContext, exactLengthContext]
         .filter(Boolean)
         .join('\n');
 
@@ -2627,7 +2595,7 @@ function buildPrompt(sourcePost, settings, product) {
     if (!template.includes(outputOnlyContext)) template += `\n${outputOnlyContext}`;
     if (!template.includes(bulletContext)) template += `\n${bulletContext}`;
     if (!template.includes(modeContext)) template += `\n${modeContext}`;
-    if (!template.includes(lengthContext)) template += `\n${lengthContext}`;
+    if (!template.includes(exactLengthContext)) template += `\n${exactLengthContext}`;
     if (productContext && !template.includes(productContext)) template += `\n${productContext}`;
 
     return template.replace(/\n{3,}/g, '\n\n').trim();
@@ -2815,42 +2783,18 @@ function isUrlOnly(line) {
     return value ? /^(https?:\/\/\S+|www\.\S+)$/i.test(value) : false;
 }
 
-function isAiWrapperOnlyLine(line) {
-    const cleaned = String(line || '').trim();
-    if (!cleaned) return false;
-
-    return [
-        /^(?:(?:gemini|grok)\s+(?:said|says|ตอบว่า|บอกว่า)|(?:คำตอบจาก|คำตอบของ)\s*(?:gemini|grok)|assistant)\s*[:：-]?$/i,
-        /^(?:นี่คือ(?:โพสต์|คำตอบ)|โพสต์(?:สำหรับ\s*(?:x|twitter|ทวิตเตอร์))?|คำตอบ(?:ด้านล่าง)?|สรุปให้แล้ว)(?:\s+(?:สำหรับ\s*(?:x|twitter|ทวิตเตอร์)|ที่(?:เขียน|สรุป)?ให้))?\s*[:：-]?$/i
-    ].some((pattern) => pattern.test(cleaned));
-}
-
-function stripAiWrapperLeadIns(text) {
-    let current = String(text || '').trim();
-    const patterns = [
-        /^(?:(?:gemini|grok)\s+(?:said|says|ตอบว่า|บอกว่า)|(?:คำตอบจาก|คำตอบของ)\s*(?:gemini|grok))\s*[:：-]?\s*/i,
-        /^(?:นี่คือ(?:โพสต์|คำตอบ)|โพสต์(?:สำหรับ\s*(?:x|twitter|ทวิตเตอร์))?|คำตอบ(?:ด้านล่าง)?|สรุปให้แล้ว)(?:\s+(?:สำหรับ\s*(?:x|twitter|ทวิตเตอร์)|ที่(?:เขียน|สรุป)?ให้))?\s*[:：-]\s*/i
-    ];
-
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-        const next = patterns.reduce((value, pattern) => value.replace(pattern, ''), current).trim();
-        if (next === current) break;
-        current = next;
-    }
-
-    return current;
-}
-
 function stripAiWrapperText(text) {
-    return stripAiWrapperLeadIns(String(text || '')
+    return String(text || '')
         .split('\n')
         .map(line => line.trim())
         .filter(line => line)
-        .filter(line => !isAiWrapperOnlyLine(line))
+        .filter(line => !/^(gemini|grok)\s+said$/i.test(line))
+        .filter(line => !/^assistant$/i.test(line))
         .join('\n')
+        .replace(/^(gemini|grok)\s+said\s*/i, '')
         .replace(/```[\s\S]*?```/g, ' ')
         .replace(/\n{3,}/g, '\n\n')
-        .trim());
+        .trim();
 }
 
 function joinPostSegments(body, trailingParts) {
