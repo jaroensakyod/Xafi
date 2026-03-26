@@ -12,6 +12,10 @@ const LEGACY_FIXED_CHAR_PROMPT_PATTERN = /247\s*ตัวอักษร/;
 const AUTO_QUOTE_MIN_INTERVAL_MINUTES = 1;
 const AUTO_QUOTE_MAX_INTERVAL_MINUTES = 120;
 const REVIEW_REQUIRED_PREFIX = 'REVIEW_REQUIRED:';
+const MAX_VOICE_EXAMPLES = 3;
+const MAX_VOICE_EXAMPLE_CHARS = 280;
+const MAX_VOICE_EXAMPLES_TOTAL_CHARS = 900;
+const VOICE_EXAMPLES_SEPARATOR = '\n---\n';
 
 const LEGACY_DEFAULT_PROMPT_TEMPLATE = `สรุปเนื้อหาด้านล่างให้เป็นโพสต์ X (ทวิตเตอร์) สไตล์เพื่อนเล่าแบบชิล ๆ ภาษาพูดธรรมชาติ ห้ามทางการ ห้ามสุภาพเกิน
 
@@ -197,7 +201,8 @@ const DEFAULT_SETTINGS = {
     dailyLimit: 60,
     autoQuoteMinMinutes: 2,
     autoQuoteMaxMinutes: 5,
-    promptTemplate: DEFAULT_PROMPT_TEMPLATE
+    promptTemplate: DEFAULT_PROMPT_TEMPLATE,
+    voiceExamples: ''
 };
 const MAX_POST_LENGTH = 280;
 
@@ -271,6 +276,7 @@ function normalizeSettings(settings = {}, options = {}) {
     const merged = { ...DEFAULT_SETTINGS, ...(settings || {}) };
     merged.aiProvider = normalizeAiProvider(merged.aiProvider);
     merged.promptMode = normalizePromptMode(merged.promptMode);
+    merged.voiceExamples = normalizeVoiceExamples(merged.voiceExamples);
     merged.pauseOnFound = Boolean(merged.pauseOnFound);
     merged.pauseOnFoundCount = Math.max(1, parseInt(merged.pauseOnFoundCount, 10) || 1);
     const normalizedAutoQuoteInterval = normalizeAutoQuoteIntervalRange(
@@ -309,6 +315,51 @@ function normalizePromptMode(mode) {
 
 function normalizeAiProvider(provider) {
     return provider === 'gemini' ? 'gemini' : 'grok';
+}
+
+function parseVoiceExamples(rawValue) {
+    if (typeof rawValue !== 'string') return [];
+
+    const normalizedInput = rawValue.replace(/\r\n/g, '\n');
+    const segments = normalizedInput
+        .split(/\n\s*---\s*\n/g)
+        .map((segment) => segment.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+
+    const normalizedExamples = [];
+    let totalChars = 0;
+
+    for (const segment of segments) {
+        const trimmedSegment = String(segment).slice(0, MAX_VOICE_EXAMPLE_CHARS).trim();
+        if (!trimmedSegment) continue;
+
+        const nextTotal = totalChars + trimmedSegment.length;
+        if (normalizedExamples.length >= MAX_VOICE_EXAMPLES || nextTotal > MAX_VOICE_EXAMPLES_TOTAL_CHARS) {
+            break;
+        }
+
+        normalizedExamples.push(trimmedSegment);
+        totalChars = nextTotal;
+    }
+
+    return normalizedExamples;
+}
+
+function normalizeVoiceExamples(rawValue) {
+    return parseVoiceExamples(rawValue).join(VOICE_EXAMPLES_SEPARATOR);
+}
+
+function buildVoiceExamplesContext(rawValue) {
+    const voiceExamples = parseVoiceExamples(rawValue);
+    if (!voiceExamples.length) return '';
+
+    const exampleLines = voiceExamples.map((example, index) => `${index + 1}. ${example}`);
+    return [
+        'ตัวอย่างน้ำเสียงของผู้ใช้ (ใช้เพื่อเลียนแบบโทน จังหวะ และวิธีเลือกคำเท่านั้น):',
+        '- ใช้ตัวอย่างเหล่านี้เพื่อจับน้ำเสียง จังหวะ และวิธีเลือกคำ',
+        '- ห้ามยก fact, ตัวเลข, ชื่อเฉพาะ หรือ claim จากตัวอย่างมาใช้ ถ้าไม่ได้อยู่ในเนื้อหาต้นทาง',
+        ...exampleLines
+    ].join('\n');
 }
 
 function clampNumber(value, minValue, maxValue) {
@@ -2711,6 +2762,7 @@ function buildPrompt(sourcePost, settings, product) {
     const promptMode = normalizePromptMode(settings?.promptMode);
     const cleanContent = sanitizeSourceText(sourcePost?.text || '');
     const productUrl = String(sourcePost?.productLink || productLink || '').trim();
+    const voiceExamplesContext = buildVoiceExamplesContext(settings?.voiceExamples);
     const charBudget = getBodyCharacterBudget(productUrl);
     const sourceContentContext = '- ใช้เนื้อหาจากทั้งโพสต์ได้ รวมถึงข้อความหลัง hashtag แต่ไม่ต้องคัดลอก hashtag หรือลิงก์จากต้นทางมาใช้ตรงๆ';
     const outputOnlyContext = '- ตอบกลับเฉพาะข้อความโพสต์สุดท้ายเพียงอย่างเดียว ห้ามมีคำอธิบาย ห้ามมี markdown ห้ามมี code block และห้ามมีข้อความสถานะ เช่น Executed code';
@@ -2742,6 +2794,7 @@ function buildPrompt(sourcePost, settings, product) {
     if (!template.includes(modeContext)) template += `\n${modeContext}`;
     if (!template.includes(outputCeilingContext)) template += `\n${outputCeilingContext}`;
     if (productContext && !template.includes(productContext)) template += `\n${productContext}`;
+    if (voiceExamplesContext && !template.includes(voiceExamplesContext)) template += `\n\n${voiceExamplesContext}`;
 
     return template.replace(/\n{3,}/g, '\n\n').trim();
 }

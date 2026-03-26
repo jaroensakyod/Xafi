@@ -472,6 +472,7 @@
             setVal('#autoQuoteMinMinutes', s.autoQuoteMinMinutes || 2);
             setVal('#autoQuoteMaxMinutes', s.autoQuoteMaxMinutes || 5);
             setVal('#promptTemplate', s.promptTemplate || '');
+            setVal('#voiceExamples', s.voiceExamples || '');
         } catch (err) {
             console.error('[Xafi] loadSettings hydration failed:', err);
         }
@@ -829,6 +830,7 @@
             autoQuoteMinMinutes: getInt('#autoQuoteMinMinutes', 2),
             autoQuoteMaxMinutes: getInt('#autoQuoteMaxMinutes', 5),
             promptTemplate: getVal('#promptTemplate', ''),
+            voiceExamples: getVal('#voiceExamples', ''),
         };
 
         const res = await sendMessage({ type: 'SAVE_SETTINGS', data: settings });

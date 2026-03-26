@@ -45,6 +45,9 @@ function createBackgroundHarness() {
         'trimToCharLimit',
         'sanitizeSourceText',
         'normalizePromptMode',
+        'parseVoiceExamples',
+        'normalizeVoiceExamples',
+        'buildVoiceExamplesContext',
         'clampNumber',
         'normalizeAutoQuoteIntervalRange',
         'buildPrompt',
@@ -61,8 +64,12 @@ function createBackgroundHarness() {
         'const MAX_POST_LENGTH = 280;',
         'const AUTO_QUOTE_MIN_INTERVAL_MINUTES = 1;',
         'const AUTO_QUOTE_MAX_INTERVAL_MINUTES = 120;',
+        'const MAX_VOICE_EXAMPLES = 3;',
+        'const MAX_VOICE_EXAMPLE_CHARS = 280;',
+        'const MAX_VOICE_EXAMPLES_TOTAL_CHARS = 900;',
+        "const VOICE_EXAMPLES_SEPARATOR = '\\n---\\n';",
         "const REVIEW_REQUIRED_PREFIX = 'REVIEW_REQUIRED:';",
-        "const DEFAULT_SETTINGS = { autoQuoteMinMinutes: 2, autoQuoteMaxMinutes: 5, promptTemplate: 'กฎ\\n{PRODUCT_CONTEXT}\\n\\nเนื้อหาต้นทาง:\\n{CONTENT}' };",
+        "const DEFAULT_SETTINGS = { autoQuoteMinMinutes: 2, autoQuoteMaxMinutes: 5, promptTemplate: 'กฎ\\n{PRODUCT_CONTEXT}\\n\\nเนื้อหาต้นทาง:\\n{CONTENT}', voiceExamples: '' };",
         "const productLink = '';",
         functionBlock,
         'return { buildPrompt, buildFinalPostOutput, buildFinalPostText, normalizeAutoQuoteIntervalRange, getDraftSaveState, getCharCount, trimToCharLimit, isReviewRequiredError };'
@@ -85,6 +92,35 @@ describe('Ticket 1 output ceiling behavior', () => {
         expect(prompt).toContain('สามารถสั้นกว่านี้ได้');
         expect(prompt).not.toContain('ตัวอักษรพอดี');
         expect(prompt).not.toContain('ต้องเท่ากับ 280');
+    });
+
+    it('buildPrompt omits the voice block when voiceExamples is empty', () => {
+        const prompt = harness.buildPrompt(
+            { text: 'ต้นทางมีรายละเอียดหลายบรรทัด', productLink: 'https://example.com/p' },
+            { promptMode: 'soft-sell', promptTemplate: 'เริ่ม\n{PRODUCT_CONTEXT}\n\n{CONTENT}', voiceExamples: '' },
+            'คอร์สสอนยิงแอด'
+        );
+
+        expect(prompt).not.toContain('ตัวอย่างน้ำเสียงของผู้ใช้');
+    });
+
+    it('buildPrompt injects up to three voice examples in stable order with tone-only guardrails', () => {
+        const prompt = harness.buildPrompt(
+            { text: 'ต้นทางมีรายละเอียดหลายบรรทัด', productLink: 'https://example.com/p' },
+            {
+                promptMode: 'soft-sell',
+                promptTemplate: 'เริ่ม\n{PRODUCT_CONTEXT}\n\n{CONTENT}',
+                voiceExamples: 'เปิดแรงแบบคุยกับเพื่อน\n---\nมีจังหวะหยอดนิดเดียว\n---\nปิดสั้นแต่คม\n---\nเกินโควตา'
+            },
+            'คอร์สสอนยิงแอด'
+        );
+
+        expect(prompt).toContain('ตัวอย่างน้ำเสียงของผู้ใช้');
+        expect(prompt).toContain('1. เปิดแรงแบบคุยกับเพื่อน');
+        expect(prompt).toContain('2. มีจังหวะหยอดนิดเดียว');
+        expect(prompt).toContain('3. ปิดสั้นแต่คม');
+        expect(prompt).not.toContain('เกินโควตา');
+        expect(prompt).toContain('ห้ามยก fact, ตัวเลข, ชื่อเฉพาะ หรือ claim จากตัวอย่างมาใช้');
     });
 
     it('buildFinalPostText no longer pads shorter content to 280 chars', () => {

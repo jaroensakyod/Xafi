@@ -15,7 +15,7 @@ function createSettingsHarness() {
 
     const harnessSource = [
         backgroundSource.slice(start, end),
-        'return { PROMPT_TEMPLATE_VERSION, V6_DEFAULT_PROMPT_TEMPLATE, V6_HOT_TAKE_PROMPT_TEMPLATE, DEFAULT_PROMPT_TEMPLATE, HOT_TAKE_PROMPT_TEMPLATE, isBuiltInPromptTemplate, normalizeSettings };'
+        'return { PROMPT_TEMPLATE_VERSION, V6_DEFAULT_PROMPT_TEMPLATE, V6_HOT_TAKE_PROMPT_TEMPLATE, DEFAULT_PROMPT_TEMPLATE, HOT_TAKE_PROMPT_TEMPLATE, DEFAULT_SETTINGS, isBuiltInPromptTemplate, normalizeSettings };'
     ].join('\n\n');
 
     return new Function(harnessSource)();
@@ -68,7 +68,7 @@ describe('Sidepanel-Background Settings Contract', () => {
         const block = defaults[0];
         const requiredFields = [
             'aiProvider', 'promptMode', 'promptTemplate',
-            'minViews', 'scrollPreset',
+            'minViews', 'scrollPreset', 'voiceExamples',
         ];
         for (const field of requiredFields) {
             expect(block, `DEFAULT_SETTINGS missing ${field}`).toContain(field);
@@ -123,6 +123,29 @@ describe('Prompt template migration safety', () => {
         expect(normalized.promptTemplate).toBe(customPrompt);
     });
 
+    it('defaults voiceExamples to an empty string when older settings do not include it', () => {
+        const normalized = harness.normalizeSettings({
+            promptMode: 'soft-sell',
+            promptTemplate: harness.DEFAULT_PROMPT_TEMPLATE,
+            promptTemplateVersion: harness.PROMPT_TEMPLATE_VERSION,
+        });
+
+        expect(normalized.voiceExamples).toBe('');
+        expect(harness.DEFAULT_SETTINGS.voiceExamples).toBe('');
+    });
+
+    it('normalizes voiceExamples into a stable capped three-example string', () => {
+        const normalized = harness.normalizeSettings({
+            voiceExamples: '  เปิดสั้นคม  \n---\n\n  ข้อสองมีน้ำหนัก   \n---\nข้อสามปิดแบบคุยกัน\n---\nข้อสี่เกินโควตา',
+        });
+
+        expect(normalized.voiceExamples).toBe([
+            'เปิดสั้นคม',
+            'ข้อสองมีน้ำหนัก',
+            'ข้อสามปิดแบบคุยกัน',
+        ].join('\n---\n'));
+    });
+
     it('treats previous built-in templates as safe migration candidates', () => {
         expect(harness.isBuiltInPromptTemplate(harness.V6_DEFAULT_PROMPT_TEMPLATE)).toBe(true);
         expect(harness.isBuiltInPromptTemplate(harness.V6_HOT_TAKE_PROMPT_TEMPLATE)).toBe(true);
@@ -148,5 +171,6 @@ describe('Sidepanel Save Settings Safety', () => {
         // Prompt-related fields must have explicit fallbacks
         expect(sidepanelSource).toContain("getVal('#promptMode', 'soft-sell')");
         expect(sidepanelSource).toContain("getVal('#promptTemplate', '')");
+        expect(sidepanelSource).toContain("getVal('#voiceExamples', '')");
     });
 });
