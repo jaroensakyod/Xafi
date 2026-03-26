@@ -506,7 +506,7 @@
         ${draft.sourceUrl ? `<div class="card-source">📌 จาก: <a href="${escapeAttr(draft.sourceUrl)}" target="_blank">${escapeHtml(draft.sourceAuthor || 'โพสต์ต้นทาง')}</a></div>` : ''}
 
         <div class="card-content draft-text" contenteditable="false">${escapeHtml(draft.finalText || draft.generatedText)}</div>
-                ${draft.postError ? `<div class="card-source" style="color:#fca5a5;">เหตุผล: ${escapeHtml(draft.postError)}</div>` : ''}
+            ${draft.postError ? `<div class="card-source" style="color:#fca5a5;">เหตุผล: ${escapeHtml(getReadableDraftError(draft.postError))}</div>` : ''}
 
         <div class="card-actions">
           <button class="btn-action btn-post" data-action="post" data-id="${escapeAttr(draft.id)}" title="ส่งไปโพสต์บน X">
@@ -803,6 +803,12 @@
         const getVal = (sel, fallback) => $(sel)?.value ?? fallback;
         const getInt = (sel, fallback) => parseInt(getVal(sel, fallback)) || fallback;
         const getChecked = (sel) => $(sel)?.checked ?? false;
+        const applyNormalizedIntervalInputs = (savedSettings) => {
+            const minInput = $('#autoQuoteMinMinutes');
+            const maxInput = $('#autoQuoteMaxMinutes');
+            if (minInput) minInput.value = String(savedSettings?.autoQuoteMinMinutes ?? 2);
+            if (maxInput) maxInput.value = String(savedSettings?.autoQuoteMaxMinutes ?? 5);
+        };
 
         const settings = {
             aiProvider: getVal('#aiProvider', 'grok'),
@@ -833,7 +839,8 @@
 
             if (res?.success) {
                 updateAiProviderUi(settings.aiProvider);
-                msg.textContent = '✅ บันทึกเรียบร้อย!';
+                applyNormalizedIntervalInputs(res.data || settings);
+                msg.textContent = `✅ บันทึกเรียบร้อย! Full Auto จะเว้นช่วงประมาณ ${res?.data?.autoQuoteMinMinutes ?? settings.autoQuoteMinMinutes}-${res?.data?.autoQuoteMaxMinutes ?? settings.autoQuoteMaxMinutes} นาทีต่อรอบ`;
                 msg.className = 'settings-msg msg-success';
             } else {
                 msg.textContent = '❌ บันทึกไม่สำเร็จ';
@@ -843,6 +850,7 @@
             setTimeout(() => msg.classList.add('hidden'), 3000);
         } else if (res?.success) {
             updateAiProviderUi(settings.aiProvider);
+            applyNormalizedIntervalInputs(res.data || settings);
         }
     });
     } catch (err) {
@@ -1103,6 +1111,9 @@
             case 'posted':
                 return { label: '✅ โพสต์แล้ว', className: 'badge-posted', title: draft.postedAt ? `โพสต์เมื่อ ${formatTime(draft.postedAt)}` : 'โพสต์เสร็จแล้ว' };
             case 'post_error':
+                if (isReviewRequiredMessage(draft.postError)) {
+                    return { label: '⚠️ ต้องตรวจ Draft', className: 'badge-quote-missing', title: getReadableDraftError(draft.postError) || 'โปรดย่อข้อความก่อนโพสต์' };
+                }
                 return { label: '❌ โพสต์ไม่สำเร็จ', className: 'badge-quote-missing', title: draft.postError || 'โปรดลองใหม่อีกครั้ง' };
             case 'pending_post':
                 return { label: '🕒 เตรียมโพสต์', className: 'badge-posted', title: 'ระบบกำลังเตรียมหน้า Compose' };
@@ -1112,23 +1123,38 @@
     }
 
     function renderDraftReadinessBadge(draft) {
-        const badge = getDraftReadiness(draft.finalText || draft.generatedText || '', draft.sourceUrl || '');
+        const badge = getDraftReadiness(draft.finalText || draft.generatedText || '', draft.sourceUrl || '', draft.postError || '');
         return `<span class="draft-readiness-badge ${badge.className}">${badge.label}</span>`;
     }
 
-    function getDraftReadiness(text, sourceUrl) {
+    function isReviewRequiredMessage(message) {
+        return String(message || '').startsWith('REVIEW_REQUIRED:');
+    }
+
+    function getReadableDraftError(message) {
+        return isReviewRequiredMessage(message)
+            ? String(message).replace('REVIEW_REQUIRED:', '').trim()
+            : String(message || '').trim();
+    }
+
+    function getDraftReadiness(text, sourceUrl, postError) {
         const hasQuoteSource = Boolean(String(sourceUrl || '').trim());
         const hasBullet = /^-\s+/m.test(String(text || ''));
-        const isExactLength = getCharCount(text) === 280;
+        const charCount = getCharCount(text);
+        const isWithinLimit = charCount <= 280;
 
-        if (hasQuoteSource && hasBullet && isExactLength) {
-            return { label: 'Quote-ready / 280 chars', className: 'badge-quote-ready' };
+        if (isReviewRequiredMessage(postError)) {
+            return { label: `ต้องรีวิว: ${charCount}/280`, className: 'badge-quote-missing' };
+        }
+
+        if (hasQuoteSource && hasBullet && isWithinLimit) {
+            return { label: `Quote-ready / ${charCount} chars`, className: 'badge-quote-ready' };
         }
 
         const missing = [];
         if (!hasQuoteSource) missing.push('quote');
         if (!hasBullet) missing.push('bullet');
-        if (!isExactLength) missing.push('280');
+        if (!isWithinLimit) missing.push(`${charCount}/280`);
         return { label: `ต้องเช็ก: ${missing.join(', ')}`, className: 'badge-quote-missing' };
     }
 

@@ -9,6 +9,9 @@
 // --- ค่าคงที่ ---
 const PROMPT_TEMPLATE_VERSION = 6;
 const LEGACY_FIXED_CHAR_PROMPT_PATTERN = /247\s*ตัวอักษร/;
+const AUTO_QUOTE_MIN_INTERVAL_MINUTES = 1;
+const AUTO_QUOTE_MAX_INTERVAL_MINUTES = 120;
+const REVIEW_REQUIRED_PREFIX = 'REVIEW_REQUIRED:';
 
 const LEGACY_DEFAULT_PROMPT_TEMPLATE = `สรุปเนื้อหาด้านล่างให้เป็นโพสต์ X (ทวิตเตอร์) สไตล์เพื่อนเล่าแบบชิล ๆ ภาษาพูดธรรมชาติ ห้ามทางการ ห้ามสุภาพเกิน
 
@@ -128,6 +131,8 @@ const DEFAULT_SETTINGS = {
     promptMode: 'soft-sell',
     sessionLimit: 15,
     dailyLimit: 60,
+    autoQuoteMinMinutes: 2,
+    autoQuoteMaxMinutes: 5,
     promptTemplate: DEFAULT_PROMPT_TEMPLATE
 };
 const MAX_POST_LENGTH = 280;
@@ -204,6 +209,12 @@ function normalizeSettings(settings = {}, options = {}) {
     merged.promptMode = normalizePromptMode(merged.promptMode);
     merged.pauseOnFound = Boolean(merged.pauseOnFound);
     merged.pauseOnFoundCount = Math.max(1, parseInt(merged.pauseOnFoundCount, 10) || 1);
+    const normalizedAutoQuoteInterval = normalizeAutoQuoteIntervalRange(
+        merged.autoQuoteMinMinutes,
+        merged.autoQuoteMaxMinutes
+    );
+    merged.autoQuoteMinMinutes = normalizedAutoQuoteInterval.minMinutes;
+    merged.autoQuoteMaxMinutes = normalizedAutoQuoteInterval.maxMinutes;
     const currentPrompt = typeof merged.promptTemplate === 'string' ? merged.promptTemplate.trim() : '';
     const hasLegacyFixedCharInstruction = LEGACY_FIXED_CHAR_PROMPT_PATTERN.test(currentPrompt);
     const canSafelyUpgradePrompt = !currentPrompt
@@ -232,6 +243,55 @@ function normalizePromptMode(mode) {
 
 function normalizeAiProvider(provider) {
     return provider === 'gemini' ? 'gemini' : 'grok';
+}
+
+function clampNumber(value, minValue, maxValue) {
+    return Math.min(maxValue, Math.max(minValue, value));
+}
+
+function normalizeAutoQuoteIntervalRange(minValue, maxValue) {
+    let minMinutes = parseInt(minValue, 10);
+    let maxMinutes = parseInt(maxValue, 10);
+
+    if (!Number.isFinite(minMinutes)) {
+        minMinutes = DEFAULT_SETTINGS.autoQuoteMinMinutes;
+    }
+
+    if (!Number.isFinite(maxMinutes)) {
+        maxMinutes = DEFAULT_SETTINGS.autoQuoteMaxMinutes;
+    }
+
+    minMinutes = clampNumber(minMinutes, AUTO_QUOTE_MIN_INTERVAL_MINUTES, AUTO_QUOTE_MAX_INTERVAL_MINUTES);
+    maxMinutes = clampNumber(maxMinutes, AUTO_QUOTE_MIN_INTERVAL_MINUTES, AUTO_QUOTE_MAX_INTERVAL_MINUTES);
+
+    if (minMinutes > maxMinutes) {
+        [minMinutes, maxMinutes] = [maxMinutes, minMinutes];
+    }
+
+    return { minMinutes, maxMinutes };
+}
+
+function createReviewRequiredError(totalChars) {
+    return `${REVIEW_REQUIRED_PREFIX} ข้อความยาว ${totalChars}/${MAX_POST_LENGTH} ตัวอักษร โปรดย่อก่อนโพสต์`;
+}
+
+function isReviewRequiredError(message) {
+    return String(message || '').startsWith(REVIEW_REQUIRED_PREFIX);
+}
+
+function getDraftSaveState(finalText) {
+    const totalChars = getCharCount(finalText || '');
+    if (totalChars > MAX_POST_LENGTH) {
+        return {
+            status: 'post_error',
+            postError: createReviewRequiredError(totalChars)
+        };
+    }
+
+    return {
+        status: 'ready',
+        postError: ''
+    };
 }
 
 function getAiProviderConfig(provider) {
@@ -1022,10 +1082,12 @@ async function onAIResponseReady(data) {
 
     const { drafts = [], results = [] } = await chrome.storage.local.get(['drafts', 'results']);
     const rawResponse = stripAiWrapperText(String(data?.response || ''));
-    const finalText = buildFinalPostText(
+    const finalPostOutput = buildFinalPostOutput(
         rawResponse,
         pendingPrompt?.sourcePost?.productLink || ''
     );
+    const finalText = finalPostOutput.finalText;
+    const draftSaveState = getDraftSaveState(finalText);
 
     debugDraftSave('before-save-draft', {
         rawResponse,
@@ -1046,7 +1108,8 @@ async function onAIResponseReady(data) {
         productLink: pendingPrompt?.sourcePost?.productLink || '',
         generatedText: rawResponse,
         finalText,
-        status: 'ready',
+        status: draftSaveState.status,
+        postError: draftSaveState.postError,
         createdAt: new Date().toISOString(),
         campaignId: pendingPrompt?.sourcePost?.campaignId || '',
         topicId: pendingPrompt?.sourcePost?.topicId || ''
@@ -1146,6 +1209,7 @@ async function updateDraft(data) {
     const idx = drafts.findIndex(d => d.id === data.id);
     if (idx >= 0) {
         const existingDraft = drafts[idx];
+        const hasTextUpdate = typeof data.generatedText === 'string' || typeof data.finalText === 'string';
         const nextGeneratedText = typeof data.generatedText === 'string'
             ? data.generatedText
             : (typeof data.finalText === 'string' ? data.finalText : existingDraft.generatedText);
@@ -1153,12 +1217,16 @@ async function updateDraft(data) {
             typeof data.finalText === 'string' ? data.finalText : nextGeneratedText,
             existingDraft.productLink || data.productLink || ''
         );
+        const nextDraftSaveState = hasTextUpdate ? getDraftSaveState(nextFinalText) : null;
 
         drafts[idx] = {
             ...existingDraft,
             ...data,
             generatedText: nextGeneratedText,
-            finalText: nextFinalText
+            finalText: nextFinalText,
+            ...(nextDraftSaveState && !Object.prototype.hasOwnProperty.call(data, 'status')
+                ? nextDraftSaveState
+                : {})
         };
 
         const resultIdx = results.findIndex(item => item.id === data.id);
@@ -1242,6 +1310,10 @@ async function syncAutoQuoteDraftStatuses(active) {
 async function recoverAutoQuoteDraftStatuses() {
     return updateDraftStatuses((draft) => {
         if (!draft.sourceUrl) return draft;
+
+        if (draft.status === 'post_error' && isReviewRequiredError(draft.postError)) {
+            return draft;
+        }
 
         if (['pending_post', 'posting', 'auto_quote_posting', 'post_error'].includes(draft.status)) {
             return {
@@ -1543,8 +1615,12 @@ async function runAutoQuoteCycle(trigger = 'manual') {
         await broadcastStatus('processing', `Auto Quote กำลังโพสต์ draft ${readyDraft.id}`);
         await postToX({ id: readyDraft.id, autoQuoteRun: true });
 
-        const defaultMin = parseInt(settings?.autoQuoteMinMinutes || 2, 10);
-        const defaultMax = parseInt(settings?.autoQuoteMaxMinutes || 5, 10);
+        const normalizedAutoQuoteInterval = normalizeAutoQuoteIntervalRange(
+            settings?.autoQuoteMinMinutes,
+            settings?.autoQuoteMaxMinutes
+        );
+        const defaultMin = normalizedAutoQuoteInterval.minMinutes;
+        const defaultMax = normalizedAutoQuoteInterval.maxMinutes;
         const remainingCount = await countPendingAutoQuoteDrafts();
         const postedAt = new Date().toISOString();
         const postedCount = Number(currentState.postedCount || 0) + 1;
@@ -2577,12 +2653,13 @@ function buildPrompt(sourcePost, settings, product) {
     const productContext = product
         ? `- ถ้ามีจังหวะที่เหมาะ ค่อยเชื่อมโยงกับสินค้า/บริการนี้เพียง 1 จุดแบบเนียนๆ เหมือนพูดแทรกจากประสบการณ์ตรง ห้าม hard sell ห้ามภาษาโฆษณา: ${product}`
         : '';
-    const exactLengthContext = [
+    const outputCeilingContext = [
         '- ระบบจะต่อท้ายข้อความด้วยลิงก์สินค้าอัตโนมัติ และจะใช้โพสต์ต้นทางทำ Quote แยกต่างหาก',
-        `- ข้อความที่ AI สร้างได้เองต้องยาว ${charBudget} ตัวอักษรพอดี`,
-        `- เมื่อนำข้อความนี้ไปรวมกับลิงก์สินค้า ${productUrl || '(ไม่มี)'} รวมทั้งทุกตัวอักษร ช่องว่าง เครื่องหมาย ?, -, การขึ้นบรรทัดใหม่ และลิงก์ทั้งหมด ความยาวรวมต้องเท่ากับ ${MAX_POST_LENGTH} ตัวอักษรพอดี`
+        `- ข้อความที่ AI สร้างได้เองต้องยาวไม่เกิน ${charBudget} ตัวอักษร และสามารถสั้นกว่านี้ได้ถ้ายังอ่านลื่นครบประเด็น`,
+        `- เมื่อนำข้อความนี้ไปรวมกับลิงก์สินค้า ${productUrl || '(ไม่มี)'} รวมทั้งทุกตัวอักษร ช่องว่าง เครื่องหมาย ?, -, การขึ้นบรรทัดใหม่ และลิงก์ทั้งหมด ความยาวรวมต้องไม่เกิน ${MAX_POST_LENGTH} ตัวอักษร`,
+        '- ถ้าเนื้อหาเริ่มยาวเกิน ให้ตัดรายละเอียดที่ไม่จำเป็นออก แต่อย่าตัดคำท้ายประโยคแบบค้าง'
     ].join('\n');
-    const dynamicContext = [sourceContentContext, outputOnlyContext, bulletContext, modeContext, productContext, exactLengthContext]
+    const dynamicContext = [sourceContentContext, outputOnlyContext, bulletContext, modeContext, productContext, outputCeilingContext]
         .filter(Boolean)
         .join('\n');
 
@@ -2595,32 +2672,28 @@ function buildPrompt(sourcePost, settings, product) {
     if (!template.includes(outputOnlyContext)) template += `\n${outputOnlyContext}`;
     if (!template.includes(bulletContext)) template += `\n${bulletContext}`;
     if (!template.includes(modeContext)) template += `\n${modeContext}`;
-    if (!template.includes(exactLengthContext)) template += `\n${exactLengthContext}`;
+    if (!template.includes(outputCeilingContext)) template += `\n${outputCeilingContext}`;
     if (productContext && !template.includes(productContext)) template += `\n${productContext}`;
 
     return template.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function buildFinalPostText(text, productUrl) {
+function buildFinalPostOutput(text, productUrl) {
     const cleanProductUrl = String(productUrl || '').trim();
     const trailingParts = [cleanProductUrl].filter(Boolean);
-    const bodyBudget = getBodyCharacterBudget(cleanProductUrl);
     const normalizedBody = enforceFourLinePostStructure(normalizeDraftStructure(stripAiWrapperText(text)));
-    let finalBody = trimToCharLimit(normalizedBody, bodyBudget);
-    let finalText = joinPostSegments(finalBody, trailingParts);
+    const finalText = joinPostSegments(normalizedBody, trailingParts);
 
-    const missingChars = MAX_POST_LENGTH - getCharCount(finalText);
-    if (missingChars > 0 && finalBody) {
-        finalBody = `${finalBody}${' '.repeat(missingChars)}`;
-        finalText = joinPostSegments(finalBody, trailingParts);
-    }
+    return {
+        finalText,
+        totalChars: getCharCount(finalText),
+        overflow: getCharCount(finalText) > MAX_POST_LENGTH,
+        bodyBudget: getBodyCharacterBudget(cleanProductUrl)
+    };
+}
 
-    if (getCharCount(finalText) > MAX_POST_LENGTH) {
-        finalBody = trimToCharLimit(finalBody, Math.max(0, bodyBudget - (getCharCount(finalText) - MAX_POST_LENGTH)));
-        finalText = joinPostSegments(finalBody, trailingParts);
-    }
-
-    return finalText;
+function buildFinalPostText(text, productUrl) {
+    return buildFinalPostOutput(text, productUrl).finalText;
 }
 
 function getBodyCharacterBudget(productUrl) {
@@ -2636,14 +2709,7 @@ function trimToCharLimit(text, limit) {
     const normalized = normalizeWhitespace(text);
     if (getCharCount(normalized) <= limit) return normalized;
 
-    const ellipsis = '...';
-    const ellipsisLength = getCharCount(ellipsis);
-    if (limit <= ellipsisLength) {
-        return Array.from(normalized).slice(0, limit).join('').trim();
-    }
-
-    const truncated = Array.from(normalized).slice(0, limit - ellipsisLength).join('').trimEnd();
-    return `${truncated}${ellipsis}`;
+    return Array.from(normalized).slice(0, limit).join('').trimEnd();
 }
 
 function normalizeWhitespace(text) {
