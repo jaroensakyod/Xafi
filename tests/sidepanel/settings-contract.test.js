@@ -6,6 +6,21 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const backgroundSource = readFileSync(resolve(__dirname, '../../background.js'), 'utf-8');
 
+function createSettingsHarness() {
+    const start = backgroundSource.indexOf('const PROMPT_TEMPLATE_VERSION =');
+    const end = backgroundSource.indexOf('async function ensureSettings()');
+    if (start < 0 || end < 0 || end <= start) {
+        throw new Error('Unable to locate settings prelude in background.js');
+    }
+
+    const harnessSource = [
+        backgroundSource.slice(start, end),
+        'return { PROMPT_TEMPLATE_VERSION, V6_DEFAULT_PROMPT_TEMPLATE, V6_HOT_TAKE_PROMPT_TEMPLATE, DEFAULT_PROMPT_TEMPLATE, HOT_TAKE_PROMPT_TEMPLATE, isBuiltInPromptTemplate, normalizeSettings };'
+    ].join('\n\n');
+
+    return new Function(harnessSource)();
+}
+
 describe('Sidepanel-Background Settings Contract', () => {
     it('normalizeSettings spreads DEFAULT_SETTINGS as base', () => {
         expect(backgroundSource).toContain('{ ...DEFAULT_SETTINGS, ...(settings || {}) }');
@@ -58,6 +73,59 @@ describe('Sidepanel-Background Settings Contract', () => {
         for (const field of requiredFields) {
             expect(block, `DEFAULT_SETTINGS missing ${field}`).toContain(field);
         }
+    });
+
+    it('bumps prompt template version to 7', () => {
+        expect(backgroundSource).toContain('const PROMPT_TEMPLATE_VERSION = 7;');
+    });
+
+    it('default prompt copy emphasizes shorter safe output and link headroom', () => {
+        expect(backgroundSource).toContain('ถ้าเนื้อหาต้นทางมีน้อย ให้เขียนสั้นได้');
+        expect(backgroundSource).toContain('ต้องเผื่อพื้นที่ให้ลิงก์สินค้าที่ระบบจะต่อท้ายได้อย่างเป็นธรรมชาติ');
+        expect(backgroundSource).toContain('ห้ามพยายามยืดข้อความให้เต็มเพดาน');
+    });
+});
+
+describe('Prompt template migration safety', () => {
+    const harness = createSettingsHarness();
+
+    it('upgrades stored soft-sell v6 built-in prompt to the new v7 built-in prompt', () => {
+        const normalized = harness.normalizeSettings({
+            promptMode: 'soft-sell',
+            promptTemplate: harness.V6_DEFAULT_PROMPT_TEMPLATE,
+            promptTemplateVersion: 6,
+        });
+
+        expect(normalized.promptTemplateVersion).toBe(harness.PROMPT_TEMPLATE_VERSION);
+        expect(normalized.promptTemplate).toBe(harness.DEFAULT_PROMPT_TEMPLATE);
+    });
+
+    it('upgrades stored hot-take v6 built-in prompt to the new v7 hot-take prompt', () => {
+        const normalized = harness.normalizeSettings({
+            promptMode: 'hot-take',
+            promptTemplate: harness.V6_HOT_TAKE_PROMPT_TEMPLATE,
+            promptTemplateVersion: 6,
+        });
+
+        expect(normalized.promptTemplateVersion).toBe(harness.PROMPT_TEMPLATE_VERSION);
+        expect(normalized.promptTemplate).toBe(harness.HOT_TAKE_PROMPT_TEMPLATE);
+    });
+
+    it('preserves a custom prompt while still updating its stored version', () => {
+        const customPrompt = 'เขียนสั้น 4 บรรทัดแบบภาษาคน และไม่ต้องขายของแรง';
+        const normalized = harness.normalizeSettings({
+            promptMode: 'soft-sell',
+            promptTemplate: customPrompt,
+            promptTemplateVersion: 6,
+        });
+
+        expect(normalized.promptTemplateVersion).toBe(harness.PROMPT_TEMPLATE_VERSION);
+        expect(normalized.promptTemplate).toBe(customPrompt);
+    });
+
+    it('treats previous built-in templates as safe migration candidates', () => {
+        expect(harness.isBuiltInPromptTemplate(harness.V6_DEFAULT_PROMPT_TEMPLATE)).toBe(true);
+        expect(harness.isBuiltInPromptTemplate(harness.V6_HOT_TAKE_PROMPT_TEMPLATE)).toBe(true);
     });
 });
 
